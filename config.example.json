@@ -1,0 +1,37 @@
+{
+  "device": {
+    "device_id": "printer-001",
+    "device_name": "Printer Modbus"
+  },
+  "modbus": {
+    "enabled": true,
+    "modbus_type": "rtu",
+    "slave_id": 1,
+    "poll_interval_ms": 1000,
+    "timeout": 3,
+    "retries": 1,
+    "rtu": {
+      "port": "/dev/ttyUSB0",
+      "baud_rate": 9600,
+      "data_bits": 8,
+      "parity": "None",
+      "stop_bits": 1
+    },
+    "tcp": {
+      "host": "127.0.0.1",
+      "port": 502
+    }
+  },
+  "server": {
+    "enabled": true,
+    "base_url": "http://localhost:8000",
+    "token": "",
+    "timeout": 10,
+    "retries": 3,
+    "print_next_path": "/print-next",
+    "reprint_path": "/reprint"
+  },
+  "service": {
+    "log_level": "INFO"
+  }
+}
