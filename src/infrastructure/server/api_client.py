@@ -51,7 +51,10 @@ class ServerApiClient:
         return f"{base_url}{clean_path}"
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
         if self._config.token:
             headers["Authorization"] = f"Bearer {self._config.token}"
         return headers

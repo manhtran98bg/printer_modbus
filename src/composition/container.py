@@ -6,6 +6,7 @@ import queue
 from src.application.agent import PrinterModbusAgent
 from src.application.workflow import PrinterWorkflow
 from src.foundation.logging import setup_logging
+from src.infrastructure.database.service import DatabaseService
 from src.infrastructure.modbus.service import ModbusService
 from src.infrastructure.server.service import ServerService
 from src.infrastructure.settings_repository import SettingsRepository
@@ -24,6 +25,7 @@ class ApplicationContainer:
 
         self.event_queue: queue.Queue[object] = queue.Queue()
         self.workflow = PrinterWorkflow()
+        self.database_service = DatabaseService()
         self.modbus_service = ModbusService(
             config=self.settings.modbus,
             event_queue=self.event_queue,
@@ -37,6 +39,7 @@ class ApplicationContainer:
             workflow=self.workflow,
             modbus_service=self.modbus_service,
             server_service=self.server_service,
+            database_service=self.database_service,
         )
 
     def start(self) -> None:

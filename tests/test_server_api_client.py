@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.infrastructure.server.api_client import ServerApiClient
-from src.models.settings import ServerConfig
+from src.models.settings import DEFAULT_SERVER_TOKEN, ServerConfig
 
 
 class FakeResponse:
@@ -38,3 +38,17 @@ def test_server_api_client_rejects_non_2xx(monkeypatch):
 
     assert response.success is False
     assert response.status_code == 302
+
+
+def test_server_api_client_uses_bearer_headers():
+    headers = ServerApiClient(ServerConfig())._headers()
+
+    assert headers["Accept"] == "application/json"
+    assert headers["Content-Type"] == "application/json"
+    assert headers["Authorization"] == f"Bearer {DEFAULT_SERVER_TOKEN}"
+
+
+def test_server_config_token_defaults_and_can_be_overridden():
+    assert ServerConfig().token == DEFAULT_SERVER_TOKEN
+    assert ServerConfig.from_dict({"token": ""}).token == DEFAULT_SERVER_TOKEN
+    assert ServerConfig.from_dict({"token": "custom-token"}).token == "custom-token"

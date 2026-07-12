@@ -4,6 +4,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Self
 
 
+DEFAULT_SERVER_TOKEN = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJlbWFpbCI6ImN1c3RvbWVyQGNvbXBhbnkuY29tIiwibmFtZSI6ImN1c3RvbWVyIiwicm9sZSI6ImN1c3RvbWVyIiwiaWF0IjoxNzcwNDQ4NzgxLCJleHAiOjQ5MjQwNDg3ODF9."
+    "vRasF7iw_00cB3yURGMCO0A49pbvjcByhzcW6eTc1iU"
+)
+
+
 def _to_int(value: object, default: int) -> int:
     try:
         return int(value)
@@ -98,7 +105,7 @@ class ModbusConfig:
 class ServerConfig:
     enabled: bool = True
     base_url: str = "http://localhost:8000"
-    token: str = ""
+    token: str = DEFAULT_SERVER_TOKEN
     timeout: int = 10
     retries: int = 3
     print_next_path: str = "/print-next"
@@ -109,7 +116,7 @@ class ServerConfig:
         return cls(
             enabled=_to_bool(data.get("enabled"), True),
             base_url=str(data.get("base_url") or "http://localhost:8000"),
-            token=str(data.get("token") or ""),
+            token=str(data.get("token") or DEFAULT_SERVER_TOKEN),
             timeout=max(1, _to_int(data.get("timeout"), 10)),
             retries=max(1, _to_int(data.get("retries"), 3)),
             print_next_path=str(data.get("print_next_path") or "/print-next"),

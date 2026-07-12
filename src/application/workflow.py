@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from dataclasses import dataclass
 
 from src.application.events import (
@@ -8,6 +10,12 @@ from src.application.events import (
     ModbusPollEvent,
     ModbusWriteEvent,
     ServerRequestCompletedEvent,
+)
+from src.infrastructure.database.commands import (
+    DatabaseCommand,
+    InsertPlcTriggerEventCommand,
+    StartBatchSummaryCommand,
+    UpdateBatchSummaryCommand,
 )
 from src.infrastructure.modbus.commands import WriteRegistersCommand, write_single_register
 from src.infrastructure.modbus.registers import (
@@ -35,7 +43,7 @@ from src.infrastructure.server.commands import PrintNextCommand, RePrintCommand,
 logger = logging.getLogger(__name__)
 
 
-WorkflowCommand = WriteRegistersCommand | ServerCommand
+WorkflowCommand = WriteRegistersCommand | ServerCommand | DatabaseCommand
 
 
 @dataclass(slots=True)
@@ -50,10 +58,15 @@ class PrinterWorkflow:
         self._last_values: dict[int, int] = {}
         self._batch = BatchCounters()
         self._slave_id = 1
+        self._current_batch_id = ""
 
     @property
     def batch_counters(self) -> BatchCounters:
         return self._batch
+
+    @property
+    def current_batch_id(self) -> str:
+        return self._current_batch_id
 
     def handle_event(self, event: object) -> list[WorkflowCommand]:
         if isinstance(event, ModbusPollEvent):
@@ -86,13 +99,45 @@ class PrinterWorkflow:
 
         batch_state = values.get(REGISTER_BATCH_STATE, 0)
         if self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_NEW):
+            now = self._timestamp()
+            self._current_batch_id = uuid.uuid4().hex
             self._batch.active = True
             self._batch.label_success_count = 0
             self._batch.label_failed_count = 0
-            logger.info("Batch started: counters reset")
+            logger.info("Batch started batch_id=%s counters reset", self._current_batch_id)
+            commands.append(
+                StartBatchSummaryCommand(
+                    batch_id=self._current_batch_id,
+                    started_at=now,
+                )
+            )
+            commands.append(
+                self._event_command(
+                    "batch_started",
+                    REGISTER_BATCH_STATE,
+                    BATCH_STATE_NEW,
+                    now,
+                )
+            )
             commands.append(self._ack(REGISTER_BATCH_STATE_ACK, ACK_RECEIVED, "batch_state_new"))
         elif self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_ERROR):
+            now = self._timestamp()
             logger.warning("Batch state error received from PLC")
+            commands.append(
+                self._event_command(
+                    "batch_error",
+                    REGISTER_BATCH_STATE,
+                    BATCH_STATE_ERROR,
+                    now,
+                )
+            )
+            if self._current_batch_id:
+                commands.append(
+                    self._summary_command(
+                        status="error",
+                        updated_at=now,
+                    )
+                )
             commands.append(self._ack(REGISTER_BATCH_STATE_ACK, ACK_RECEIVED, "batch_state_error"))
 
         if self._changed_to(
@@ -101,10 +146,19 @@ class PrinterWorkflow:
             REQUEST_ACTIVE,
         ):
             logger.info("PRINT_NEXT_REQUEST received from PLC")
+            commands.append(
+                self._event_command(
+                    "print_next_request",
+                    REGISTER_PRINT_NEXT_REQUEST,
+                    REQUEST_ACTIVE,
+                    self._timestamp(),
+                )
+            )
             commands.append(PrintNextCommand())
 
         label_state = values.get(REGISTER_ATTACK_LABEL_STATE, 0)
         if self._changed_to(REGISTER_ATTACK_LABEL_STATE, label_state, ATTACK_LABEL_SUCCESS):
+            now = self._timestamp()
             if self._batch.active:
                 self._batch.label_success_count += 1
             logger.info(
@@ -113,9 +167,20 @@ class PrinterWorkflow:
                 self._batch.label_failed_count,
             )
             commands.append(
+                self._event_command(
+                    "label_success",
+                    REGISTER_ATTACK_LABEL_STATE,
+                    ATTACK_LABEL_SUCCESS,
+                    now,
+                )
+            )
+            if self._batch.active and self._current_batch_id:
+                commands.append(self._summary_command(status="active", updated_at=now))
+            commands.append(
                 self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_SUCCESS, "label_success")
             )
         elif self._changed_to(REGISTER_ATTACK_LABEL_STATE, label_state, ATTACK_LABEL_FAILED):
+            now = self._timestamp()
             if self._batch.active:
                 self._batch.label_failed_count += 1
             logger.info(
@@ -123,6 +188,16 @@ class PrinterWorkflow:
                 self._batch.label_success_count,
                 self._batch.label_failed_count,
             )
+            commands.append(
+                self._event_command(
+                    "label_failed",
+                    REGISTER_ATTACK_LABEL_STATE,
+                    ATTACK_LABEL_FAILED,
+                    now,
+                )
+            )
+            if self._batch.active and self._current_batch_id:
+                commands.append(self._summary_command(status="active", updated_at=now))
             commands.append(
                 self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_FAILED, "label_failed")
             )
@@ -133,6 +208,14 @@ class PrinterWorkflow:
             REQUEST_ACTIVE,
         ):
             logger.info("RE_PRINT_REQUEST received from PLC")
+            commands.append(
+                self._event_command(
+                    "reprint_request",
+                    REGISTER_RE_PRINT_REQUEST,
+                    REQUEST_ACTIVE,
+                    self._timestamp(),
+                )
+            )
             commands.append(RePrintCommand())
 
         if self._changed_to(
@@ -140,12 +223,29 @@ class PrinterWorkflow:
             values.get(REGISTER_ATTACK_BATCH_DONE, 0),
             ATTACK_BATCH_DONE,
         ):
+            now = self._timestamp()
             self._batch.active = False
             logger.info(
                 "Batch done received success_count=%s failed_count=%s",
                 self._batch.label_success_count,
                 self._batch.label_failed_count,
             )
+            commands.append(
+                self._event_command(
+                    "batch_done",
+                    REGISTER_ATTACK_BATCH_DONE,
+                    ATTACK_BATCH_DONE,
+                    now,
+                )
+            )
+            if self._current_batch_id:
+                commands.append(
+                    self._summary_command(
+                        status="done",
+                        updated_at=now,
+                        ended_at=now,
+                    )
+                )
             commands.append(self._ack(REGISTER_ATTACK_BATCH_ACK, ACK_RECEIVED, "batch_done"))
 
         for address, value in values.items():
@@ -190,3 +290,38 @@ class PrinterWorkflow:
             value=value,
             metadata={"reason": reason},
         )
+
+    def _event_command(
+        self,
+        event_type: str,
+        register_address: int,
+        register_value: int,
+        created_at: int,
+    ) -> InsertPlcTriggerEventCommand:
+        return InsertPlcTriggerEventCommand(
+            batch_id=self._current_batch_id,
+            event_type=event_type,
+            register_address=register_address,
+            register_value=register_value,
+            created_at=created_at,
+        )
+
+    def _summary_command(
+        self,
+        *,
+        status: str,
+        updated_at: int,
+        ended_at: int = 0,
+    ) -> UpdateBatchSummaryCommand:
+        return UpdateBatchSummaryCommand(
+            batch_id=self._current_batch_id,
+            success_count=self._batch.label_success_count,
+            failed_count=self._batch.label_failed_count,
+            status=status,
+            updated_at=updated_at,
+            ended_at=ended_at,
+        )
+
+    @staticmethod
+    def _timestamp() -> int:
+        return int(time.time())

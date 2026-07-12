@@ -5,6 +5,12 @@ import queue
 import threading
 
 from src.application.workflow import PrinterWorkflow
+from src.infrastructure.database.commands import (
+    InsertPlcTriggerEventCommand,
+    StartBatchSummaryCommand,
+    UpdateBatchSummaryCommand,
+)
+from src.infrastructure.database.service import DatabaseService
 from src.infrastructure.modbus.commands import WriteRegistersCommand
 from src.infrastructure.modbus.service import ModbusService
 from src.infrastructure.server.commands import PrintNextCommand, RePrintCommand
@@ -22,15 +28,18 @@ class PrinterModbusAgent:
         workflow: PrinterWorkflow,
         modbus_service: ModbusService,
         server_service: ServerService,
+        database_service: DatabaseService,
     ) -> None:
         self._event_queue = event_queue
         self._workflow = workflow
         self._modbus_service = modbus_service
         self._server_service = server_service
+        self._database_service = database_service
         self._stop_event = threading.Event()
 
     def start(self) -> None:
         self._stop_event.clear()
+        self._database_service.start()
         self._modbus_service.start()
         self._server_service.start()
         logger.info("PrinterModbusAgent started")
@@ -52,9 +61,20 @@ class PrinterModbusAgent:
         self._stop_event.set()
         self._server_service.stop()
         self._modbus_service.stop()
+        self._database_service.stop(drain=True)
         logger.info("PrinterModbusAgent stopped")
 
     def _route_command(self, command: object) -> None:
+        if isinstance(
+            command,
+            (
+                InsertPlcTriggerEventCommand,
+                StartBatchSummaryCommand,
+                UpdateBatchSummaryCommand,
+            ),
+        ):
+            self._database_service.enqueue(command)
+            return
         if isinstance(command, WriteRegistersCommand):
             self._modbus_service.enqueue_high_priority(command)
             return

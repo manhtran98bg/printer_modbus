@@ -28,3 +28,10 @@ Runtime config is stored at:
 Windows: C:\Users\{User_name}\.printer_modbus\storage\config.json
 Ubuntu:  /home/{user}/.printer_modbus/storage/config.json
 ```
+
+SQLite runtime database is stored at:
+
+```text
+Windows: C:\Users\{User_name}\.printer_modbus\printer_modbus.db
+Ubuntu:  /home/{user}/.printer_modbus/printer_modbus.db
+```
