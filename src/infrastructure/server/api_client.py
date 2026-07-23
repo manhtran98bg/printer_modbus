@@ -1,11 +1,15 @@
 from __future__ import annotations
-
+import logging
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from src.models.settings import ServerConfig
 
+
+START_BATCH_URL = "http://172.28.79.126:3412/print-history/start-batch"
+END_BATCH_URL = "http://172.28.79.126:3412/print-history/end-batch"
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class ServerResponse:
@@ -24,8 +28,18 @@ class ServerApiClient:
     def reprint(self) -> ServerResponse:
         return self._post_no_body(self._config.reprint_path)
 
+    def start_batch(self) -> ServerResponse:
+        return self._post_url_no_body(START_BATCH_URL)
+
+    def end_batch(self) -> ServerResponse:
+        return self._post_url_no_body(END_BATCH_URL)
+
     def _post_no_body(self, path: str) -> ServerResponse:
-        request = Request(self._url(path), method="POST", headers=self._headers())
+        return self._post_url_no_body(self._url(path))
+
+    def _post_url_no_body(self, url: str) -> ServerResponse:
+        request = Request(url, method="POST", headers=self._headers())
+        logger.info(request.full_url)
         last_response = ServerResponse(success=False, status_code=0, error="request not sent")
         for _attempt in range(max(1, int(self._config.retries))):
             try:

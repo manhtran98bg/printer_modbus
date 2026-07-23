@@ -9,6 +9,7 @@ def test_register_addresses():
     assert registers.REGISTER_ATTACK_LABEL_STATE == 2
     assert registers.REGISTER_RE_PRINT_REQUEST == 3
     assert registers.REGISTER_ATTACK_BATCH_DONE == 4
+    assert registers.REGISTER_PENDING_RESET == 5
     assert registers.REGISTER_BATCH_STATE_ACK == 10
     assert registers.REGISTER_PRINT_NEXT_ACK == 11
     assert registers.REGISTER_ATTACK_LABEL_ACK == 12

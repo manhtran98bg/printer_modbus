@@ -13,4 +13,14 @@ class RePrintCommand:
     pass
 
 
-ServerCommand = PrintNextCommand | RePrintCommand
+@dataclass(frozen=True, slots=True)
+class StartBatchCommand:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class EndBatchCommand:
+    pass
+
+
+ServerCommand = PrintNextCommand | RePrintCommand | StartBatchCommand | EndBatchCommand

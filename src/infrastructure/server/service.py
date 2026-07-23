@@ -6,7 +6,13 @@ import threading
 
 from src.application.events import ServerRequestCompletedEvent
 from src.infrastructure.server.api_client import ServerApiClient
-from src.infrastructure.server.commands import PrintNextCommand, RePrintCommand, ServerCommand
+from src.infrastructure.server.commands import (
+    EndBatchCommand,
+    PrintNextCommand,
+    RePrintCommand,
+    ServerCommand,
+    StartBatchCommand,
+)
 from src.models.settings import ServerConfig
 
 
@@ -70,6 +76,12 @@ class ServerService:
         elif isinstance(command, RePrintCommand):
             request_type = "reprint"
             response = self._api_client.reprint()
+        elif isinstance(command, StartBatchCommand):
+            request_type = "start_batch"
+            response = self._api_client.start_batch()
+        elif isinstance(command, EndBatchCommand):
+            request_type = "end_batch"
+            response = self._api_client.end_batch()
         else:
             logger.warning("Unsupported server command: %r", command)
             return

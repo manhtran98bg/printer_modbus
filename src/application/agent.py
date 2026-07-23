@@ -13,7 +13,12 @@ from src.infrastructure.database.commands import (
 from src.infrastructure.database.service import DatabaseService
 from src.infrastructure.modbus.commands import WriteRegistersCommand
 from src.infrastructure.modbus.service import ModbusService
-from src.infrastructure.server.commands import PrintNextCommand, RePrintCommand
+from src.infrastructure.server.commands import (
+    EndBatchCommand,
+    PrintNextCommand,
+    RePrintCommand,
+    StartBatchCommand,
+)
 from src.infrastructure.server.service import ServerService
 
 
@@ -78,7 +83,10 @@ class PrinterModbusAgent:
         if isinstance(command, WriteRegistersCommand):
             self._modbus_service.enqueue_high_priority(command)
             return
-        if isinstance(command, (PrintNextCommand, RePrintCommand)):
+        if isinstance(
+            command,
+            (PrintNextCommand, RePrintCommand, StartBatchCommand, EndBatchCommand),
+        ):
             self._server_service.enqueue(command)
             return
         logger.debug("No command routing implemented for: %r", command)
