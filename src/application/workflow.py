@@ -58,6 +58,7 @@ class PrinterWorkflow:
         self._last_values: dict[int, int] = {}
         self._batch = BatchCounters()
         self._slave_id = 1
+        self._pending_attack = False
         self._current_batch_id = ""
 
     @property
@@ -96,15 +97,16 @@ class PrinterWorkflow:
         self._slave_id = int(event.slave_id)
         commands: list[WorkflowCommand] = []
         values = self._poll_values(event)
-
+	
         batch_state = values.get(REGISTER_BATCH_STATE, 0)
+        logger.info(values)
         if self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_NEW):
             now = self._timestamp()
             self._current_batch_id = uuid.uuid4().hex
             self._batch.active = True
             self._batch.label_success_count = 0
             self._batch.label_failed_count = 0
-            logger.info("Batch started batch_id=%s counters reset", self._current_batch_id)
+            logger.info("BATCH_STATE_NEW received from PLC. Batch started batch_id=%s counters reset", self._current_batch_id)
             commands.append(
                 StartBatchSummaryCommand(
                     batch_id=self._current_batch_id,
@@ -120,9 +122,10 @@ class PrinterWorkflow:
                 )
             )
             commands.append(self._ack(REGISTER_BATCH_STATE_ACK, ACK_RECEIVED, "batch_state_new"))
+            commands.append(self._reset(REGISTER_BATCH_STATE, 0, "batch_state_new_reset"))
         elif self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_ERROR):
             now = self._timestamp()
-            logger.warning("Batch state error received from PLC")
+            logger.warning("BATCH_STATE_ERROR received from PLC")
             commands.append(
                 self._event_command(
                     "batch_error",
@@ -139,12 +142,13 @@ class PrinterWorkflow:
                     )
                 )
             commands.append(self._ack(REGISTER_BATCH_STATE_ACK, ACK_RECEIVED, "batch_state_error"))
+            commands.append(self._reset(REGISTER_BATCH_STATE, 0, "batch_state_error_reset"))
 
         if self._changed_to(
             REGISTER_PRINT_NEXT_REQUEST,
             values.get(REGISTER_PRINT_NEXT_REQUEST, 0),
             REQUEST_ACTIVE,
-        ):
+        ) and self._pending_attack == False:
             logger.info("PRINT_NEXT_REQUEST received from PLC")
             commands.append(
                 self._event_command(
@@ -154,6 +158,9 @@ class PrinterWorkflow:
                     self._timestamp(),
                 )
             )
+            commands.append(self._ack(REGISTER_PRINT_NEXT_ACK, ACK_RECEIVED, "print_next_request"))
+            commands.append(self._reset(REGISTER_PRINT_NEXT_REQUEST, 0, "print_next_request_reset"))
+            self._pending_attack = True
             commands.append(PrintNextCommand())
 
         label_state = values.get(REGISTER_ATTACK_LABEL_STATE, 0)
@@ -166,6 +173,7 @@ class PrinterWorkflow:
                 self._batch.label_success_count,
                 self._batch.label_failed_count,
             )
+            
             commands.append(
                 self._event_command(
                     "label_success",
@@ -177,8 +185,12 @@ class PrinterWorkflow:
             if self._batch.active and self._current_batch_id:
                 commands.append(self._summary_command(status="active", updated_at=now))
             commands.append(
-                self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_SUCCESS, "label_success")
+                self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_SUCCESS, "attack_label_success")
             )
+            commands.append(
+                self._reset(REGISTER_ATTACK_LABEL_STATE, 0, "attack_label_success_reset")
+            )
+            self._pending_attack = False
         elif self._changed_to(REGISTER_ATTACK_LABEL_STATE, label_state, ATTACK_LABEL_FAILED):
             now = self._timestamp()
             if self._batch.active:
@@ -199,14 +211,17 @@ class PrinterWorkflow:
             if self._batch.active and self._current_batch_id:
                 commands.append(self._summary_command(status="active", updated_at=now))
             commands.append(
-                self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_FAILED, "label_failed")
+                self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_FAILED, "attack_label_failed")
             )
-
+            commands.append(
+                self._reset(REGISTER_ATTACK_LABEL_STATE, 0, "attack_label_failed_reset")
+            )
+            self._pending_attack = False
         if self._changed_to(
             REGISTER_RE_PRINT_REQUEST,
             values.get(REGISTER_RE_PRINT_REQUEST, 0),
             REQUEST_ACTIVE,
-        ):
+        ) and self._pending_attack == False:
             logger.info("RE_PRINT_REQUEST received from PLC")
             commands.append(
                 self._event_command(
@@ -216,6 +231,9 @@ class PrinterWorkflow:
                     self._timestamp(),
                 )
             )
+            commands.append(self._ack(REGISTER_RE_PRINT_ACK, ACK_RECEIVED, "re_print_request"))
+            commands.append(self._reset(REGISTER_RE_PRINT_REQUEST, 0, "re_print_request_reset"))
+            self._pending_attack = True
             commands.append(RePrintCommand())
 
         if self._changed_to(
@@ -226,7 +244,7 @@ class PrinterWorkflow:
             now = self._timestamp()
             self._batch.active = False
             logger.info(
-                "Batch done received success_count=%s failed_count=%s",
+                "BATCH_DONE received success_count=%s failed_count=%s",
                 self._batch.label_success_count,
                 self._batch.label_failed_count,
             )
@@ -247,7 +265,7 @@ class PrinterWorkflow:
                     )
                 )
             commands.append(self._ack(REGISTER_ATTACK_BATCH_ACK, ACK_RECEIVED, "batch_done"))
-
+            commands.append(self._reset(REGISTER_ATTACK_BATCH_DONE, 0, "batch_done_reset"))
         for address, value in values.items():
             self._last_values[address] = value
         return commands
@@ -267,10 +285,10 @@ class PrinterWorkflow:
 
         if event.request_type == "print_next":
             logger.info("Server print_next OK; ACK PLC register %s=1", REGISTER_PRINT_NEXT_ACK)
-            return [self._ack(REGISTER_PRINT_NEXT_ACK, ACK_RECEIVED, "print_next_ok")]
+            return []
         if event.request_type == "reprint":
             logger.info("Server reprint OK; ACK PLC register %s=1", REGISTER_RE_PRINT_ACK)
-            return [self._ack(REGISTER_RE_PRINT_ACK, ACK_RECEIVED, "reprint_ok")]
+            return []
         return []
 
     def _poll_values(self, event: ModbusPollEvent) -> dict[int, int]:
@@ -280,7 +298,8 @@ class PrinterWorkflow:
         }
 
     def _changed_to(self, address: int, value: int, target: int) -> bool:
-        return int(value) == int(target) and self._last_values.get(address, 0) != int(target)
+        #return int(value) == int(target) and self._last_values.get(address, 0) != int(target)
+        return int(value) == int(target)
 
     def _ack(self, address: int, value: int, reason: str) -> WriteRegistersCommand:
         logger.info("Queue PLC ACK address=%s value=%s reason=%s", address, value, reason)
@@ -290,7 +309,14 @@ class PrinterWorkflow:
             value=value,
             metadata={"reason": reason},
         )
-
+    def _reset(self, address: int, value: int, reason: str) -> WriteRegistersCommand:
+        logger.info("Reset PLC address=%s value=%s reason=%s", address, value, reason)
+        return write_single_register(
+            slave_id=self._slave_id,
+            address=address,
+            value=value,
+            metadata={"reason": reason},
+        )
     def _event_command(
         self,
         event_type: str,

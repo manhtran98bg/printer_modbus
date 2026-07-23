@@ -133,13 +133,13 @@ class ModbusService:
         try:
             client = self._ensure_client()
             if isinstance(command, PollRegistersCommand):
-                logger.debug(
-                    "Modbus poll start slave_id=%s address=%s count=%s reason=%s",
-                    command.slave_id,
-                    command.start_address,
-                    command.count,
-                    command.reason,
-                )
+                #logger.debug(
+                #    "Modbus poll start slave_id=%s address=%s count=%s reason=%s",
+                #    command.slave_id,
+                #    command.start_address,
+                #    command.count,
+                #    command.reason,
+                #)
                 registers = client.read_holding_registers(
                     command.slave_id,
                     command.start_address,
@@ -156,13 +156,13 @@ class ModbusService:
                 return
 
             if isinstance(command, WriteRegistersCommand):
-                logger.info(
-                    "Modbus write slave_id=%s address=%s values=%s metadata=%s",
-                    command.slave_id,
-                    command.address,
-                    command.values,
-                    command.metadata,
-                )
+                #logger.info(
+                #    "Modbus write slave_id=%s address=%s values=%s metadata=%s",
+                #    command.slave_id,
+                #    command.address,
+                #    command.values,
+                #    command.metadata,
+                #)
                 client.write_registers(command.slave_id, command.address, command.values)
                 self._event_queue.put(
                     ModbusWriteEvent(

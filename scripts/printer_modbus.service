@@ -5,11 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/printer_modbus
-ExecStart=/usr/bin/python3 -m src.main
+User=nidec-sever-agv
+Group=nidec-sever-agv
+WorkingDirectory=/home/nidec-sever-agv/printer_deploy/printer_modbus
+ExecStart=/home/nidec-sever-agv/printer_deploy/iwms_printer_qml/venv/bin/python -m src.main
 Restart=always
 RestartSec=5
 User=root
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
