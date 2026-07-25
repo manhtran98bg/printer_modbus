@@ -34,4 +34,5 @@ class ServerRequestCompletedEvent:
     success: bool
     status_code: int = 0
     error: str = ""
+    payload: dict[str, Any] | None = None
 

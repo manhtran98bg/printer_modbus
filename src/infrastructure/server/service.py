@@ -105,5 +105,6 @@ class ServerService:
                 success=response.success,
                 status_code=response.status_code,
                 error=response.error,
+                payload=response.payload,
             )
         )

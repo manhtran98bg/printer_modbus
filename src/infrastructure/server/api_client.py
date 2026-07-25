@@ -1,5 +1,6 @@
 from __future__ import annotations
-import logging
+
+import json
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -9,13 +10,14 @@ from src.models.settings import ServerConfig
 
 START_BATCH_URL = "http://172.28.79.126:3412/print-history/start-batch"
 END_BATCH_URL = "http://172.28.79.126:3412/print-history/end-batch"
-logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class ServerResponse:
     success: bool
     status_code: int
     error: str = ""
+    payload: dict[str, object] | None = None
 
 
 class ServerApiClient:
@@ -39,15 +41,16 @@ class ServerApiClient:
 
     def _post_url_no_body(self, url: str) -> ServerResponse:
         request = Request(url, method="POST", headers=self._headers())
-        logger.info(request.full_url)
         last_response = ServerResponse(success=False, status_code=0, error="request not sent")
         for _attempt in range(max(1, int(self._config.retries))):
             try:
                 with urlopen(request, timeout=float(self._config.timeout)) as response:
                     status_code = int(response.status)
+                    payload = self._read_json_payload(response)
                     return ServerResponse(
                         success=200 <= status_code <= 299,
                         status_code=status_code,
+                        payload=payload,
                     )
             except HTTPError as exc:
                 last_response = ServerResponse(
@@ -63,6 +66,25 @@ class ServerApiClient:
         base_url = self._config.base_url.rstrip("/")
         clean_path = "/" + str(path or "").lstrip("/")
         return f"{base_url}{clean_path}"
+
+    def _read_json_payload(self, response: object) -> dict[str, object] | None:
+        read = getattr(response, "read", None)
+        if not callable(read):
+            return None
+        raw_body = read()
+        if not raw_body:
+            return None
+        if isinstance(raw_body, bytes):
+            text = raw_body.decode("utf-8", "ignore")
+        else:
+            text = str(raw_body)
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+        return None
 
     def _headers(self) -> dict[str, str]:
         headers = {
