@@ -115,7 +115,7 @@ class PrinterWorkflow:
         self._clear_inactive_server_requests(values)
 
         batch_state = values.get(REGISTER_BATCH_STATE, 0)
-        logger.info(values)
+        #logger.info(values)
         if self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_NEW):
             if not self._server_request_pending("start_batch"):
                 logger.info("BATCH_STATE_NEW received from PLC; queue start_batch server request")
