@@ -111,6 +111,7 @@ class PrinterWorkflow:
         batch_state = values.get(REGISTER_BATCH_STATE, 0)
         if self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_NEW):
             if not self._server_request_pending("start_batch"):
+                logger.info("===============================================================================")
                 self._log_plc_event("D0=start_batch")
                 self._pending_server_requests.add("start_batch")
                 commands.append(StartBatchCommand())
