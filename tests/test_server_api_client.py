@@ -94,6 +94,35 @@ def test_4xx_returns_immediately_and_parses_msg(monkeypatch):
     assert response.payload == {"msg": "box_count is invalid"}
 
 
+def test_4xx_parses_message_field(monkeypatch):
+    body = json.dumps(
+        {
+            "statusCode": 404,
+            "message": 'No print history with status "new" found',
+        }
+    ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        raise HTTPError(
+            url=request.full_url,
+            code=404,
+            msg="not found",
+            hdrs=None,
+            fp=io.BytesIO(body),
+        )
+
+    monkeypatch.setattr("src.infrastructure.server.api_client.urlopen", fake_urlopen)
+
+    response = ServerApiClient(ServerConfig()).start_batch(4)
+
+    assert response.status_code == 404
+    assert response.error == 'No print history with status "new" found'
+    assert response.payload == {
+        "statusCode": 404,
+        "message": 'No print history with status "new" found',
+    }
+
+
 def test_5xx_retries_up_to_configured_attempts(monkeypatch):
     calls = 0
 

@@ -31,3 +31,31 @@ SET ended_at = ?,
     updated_at = ?
 WHERE batch_id = ?
 """
+
+UPSERT_COMMUNICATION_EVENT = """
+INSERT INTO communication_event (
+    operation_id, batch_id, action, direction,
+    request_register, request_value, response_register, response_value,
+    box_count, status, http_status, message,
+    started_at, completed_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(operation_id) DO UPDATE SET
+    batch_id = excluded.batch_id,
+    action = excluded.action,
+    direction = excluded.direction,
+    request_register = excluded.request_register,
+    request_value = excluded.request_value,
+    response_register = excluded.response_register,
+    response_value = excluded.response_value,
+    box_count = excluded.box_count,
+    status = excluded.status,
+    http_status = excluded.http_status,
+    message = excluded.message,
+    completed_at = excluded.completed_at,
+    updated_at = excluded.updated_at
+"""
+
+DELETE_OLD_COMMUNICATION_EVENTS = """
+DELETE FROM communication_event WHERE updated_at < ?
+"""

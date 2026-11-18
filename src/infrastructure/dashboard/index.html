@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Giám sát máy in PLC - MES</title>
+  <style>
+    @font-face {
+      font-family: "Roboto";
+      src: url("/roboto-variable.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+    }
+
+    :root {
+      color-scheme: light;
+      --nidec-green: #009b4a;
+      --nidec-dark: #193527;
+      --nidec-mid: #18543a;
+      --nidec-bright: #37d135;
+      --surface: #ffffff;
+      --background: #e9edeb;
+      --grey-1: #f2f2f2;
+      --grey-2: #e1e1e1;
+      --grey-3: #b4b4b4;
+      --text: #111713;
+      --muted: #526158;
+      --warning: #c87800;
+      --warning-soft: #fff2cf;
+      --danger: #c62828;
+      --danger-soft: #fde8e7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 720px;
+      background: var(--background);
+      color: var(--text);
+      font-family: "Roboto", "Noto Sans", "Segoe UI", Arial, sans-serif;
+      font-size: 15px;
+    }
+
+    .page { width: 100%; padding: 0 14px 14px; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 62px;
+      margin: 0 -14px 12px;
+      padding: 8px 18px;
+      color: #fff;
+      background: var(--nidec-dark);
+      border-bottom: 4px solid var(--nidec-green);
+    }
+
+    .brand-lockup { display: flex; align-items: center; gap: 18px; }
+    .brand-logo {
+      display: block;
+      width: 150px;
+      height: auto;
+    }
+    .title-block { padding-left: 18px; border-left: 1px solid #527060; }
+    h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .07em; }
+    .screen-code { margin-top: 4px; color: #c7d4cd; font-size: 12px; letter-spacing: .12em; }
+    header .last-update {
+      color: #e8efeb;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .event-count {
+      color: #34443a;
+      font-size: 13px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .live-indicator {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      background: var(--nidec-bright);
+      border: 1px solid #7ff079;
+    }
+
+    .panel {
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--grey-3);
+      border-top: 3px solid var(--nidec-green);
+    }
+
+    .production-panel { margin-bottom: 10px; }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 38px;
+      padding: 0 8px 0 10px;
+      background: var(--grey-1);
+      border-bottom: 1px solid var(--grey-3);
+    }
+    .panel-header .section-title {
+      padding: 0;
+      border: 0;
+    }
+    .collapse-button {
+      appearance: none;
+      min-width: 94px;
+      min-height: 28px;
+      padding: 3px 9px;
+      color: var(--nidec-dark);
+      background: #fff;
+      border: 1px solid #8f9993;
+      border-radius: 1px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .collapse-button:hover { border-color: var(--nidec-green); }
+    .panel.collapsed .panel-content { display: none; }
+    .panel.collapsed .panel-header { border-bottom: 0; }
+
+    .register-panel { margin-bottom: 10px; }
+    .section-title {
+      margin: 0;
+      padding: 7px 10px;
+      color: var(--nidec-dark);
+      background: var(--grey-1);
+      border-bottom: 1px solid var(--grey-3);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .register-grid {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(72px, 1fr));
+      gap: 6px;
+      padding: 8px;
+      background: #d8ddda;
+    }
+    .register {
+      min-height: 54px;
+      padding: 6px 8px;
+      text-align: center;
+      background: #fff;
+      border: 1px solid #929c96;
+      border-left: 4px solid #69756e;
+    }
+    .register.active { background: #e6f4eb; border-color: var(--nidec-green); }
+    .register.warning { background: var(--warning-soft); border-color: var(--warning); }
+    .register.error { background: var(--danger-soft); border-color: var(--danger); }
+    .register-name { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .05em; }
+    .register-value {
+      margin-top: 3px;
+      color: #000;
+      font-size: 26px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 8px;
+      background: var(--grey-1);
+      border-bottom: 1px solid var(--grey-3);
+    }
+    .filters { display: flex; flex-wrap: wrap; gap: 4px; }
+    .filter, .page-button {
+      appearance: none;
+      min-height: 30px;
+      padding: 5px 11px;
+      color: #1f2923;
+      background: #fff;
+      border: 1px solid #8f9993;
+      border-radius: 1px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .filter:hover, .page-button:hover:not(:disabled) { border-color: var(--nidec-green); }
+    .filter.active { color: #fff; background: var(--nidec-green); border-color: #007f3d; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; }
+    th {
+      padding: 8px 10px;
+      text-align: left;
+      color: #fff;
+      background: var(--nidec-mid);
+      border-right: 1px solid #3d7058;
+      border-bottom: 1px solid #0d3322;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    #event-table th:nth-child(1) { width: 150px; }
+    #event-table th:nth-child(2) { width: 190px; }
+    #event-table th:nth-child(3) { width: 190px; }
+    #event-table th:nth-child(4) { width: 130px; }
+    th:last-child { border-right: 0; }
+    td {
+      padding: 8px 10px;
+      vertical-align: middle;
+      border-right: 1px solid var(--grey-2);
+      border-bottom: 1px solid #cbd1cd;
+    }
+    td:last-child { border-right: 0; }
+    tbody tr.event-row:nth-of-type(4n + 1) { background: #f7f8f7; }
+    tr.event-row { cursor: pointer; }
+    tr.event-row:hover { background: #e4f2e9; }
+    .time-cell {
+      color: #26362d;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+    }
+    .direction { color: #425149; font-size: 13px; white-space: nowrap; }
+    .action { font-weight: 700; text-transform: uppercase; }
+    .action-sub { margin-top: 3px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .message { max-width: 500px; color: #26362d; font-size: 14px; overflow-wrap: anywhere; }
+    .batch-table { min-width: 850px; }
+    .batch-table th:nth-child(1) { width: 310px; }
+    .batch-table th:nth-child(2) { width: 150px; }
+    .batch-table th:nth-child(3), .batch-table th:nth-child(4) { width: 170px; }
+    .batch-table th:nth-child(5), .batch-table th:nth-child(6) { width: 110px; text-align: center; }
+    .batch-id { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+    .batch-number { text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .batch-status { font-weight: 800; text-transform: uppercase; }
+    .batch-status.active { color: #8a5300; }
+    .batch-status.done { color: #00783a; }
+
+    .badge {
+      display: inline-block;
+      min-width: 86px;
+      padding: 4px 6px;
+      text-align: center;
+      border: 1px solid;
+      border-radius: 1px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge.success { color: #006d35; background: #e0f3e7; border-color: var(--nidec-green); }
+    .badge.rejected { color: #714400; background: var(--warning-soft); border-color: var(--warning); }
+    .badge.error { color: #8d1818; background: var(--danger-soft); border-color: var(--danger); }
+    .badge.processing, .badge.cancelled { color: #404a44; background: #e7e9e8; border-color: #7f8983; }
+
+    .detail-row { display: none; background: #e9efeb; }
+    .detail-row.open { display: table-row; }
+    .detail { padding: 11px 14px 13px; border-left: 5px solid var(--nidec-green); }
+    .detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--grey-3); border: 1px solid var(--grey-3); }
+    .detail-grid > div { min-height: 50px; padding: 7px 9px; background: #fff; }
+    .detail-label { margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .detail-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .detail-message { margin-top: 9px; padding: 8px 9px; background: #fff; border: 1px solid var(--grey-3); font-size: 13px; }
+
+    .empty, .loading { padding: 32px 16px; text-align: center; color: var(--muted); }
+    .empty { display: none; }
+    .empty.visible { display: block; }
+    .pagination {
+      display: none;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 7px 8px;
+      background: var(--grey-1);
+      border-top: 1px solid var(--grey-3);
+    }
+    .pagination.visible { display: flex; }
+    .page-button:disabled { cursor: not-allowed; opacity: .4; }
+    .page-info { min-width: 100px; text-align: center; color: #34443a; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+    @media (max-width: 900px) {
+      header { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+      .detail-grid { grid-template-columns: 1fr 1fr; }
+      .register-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="brand-lockup">
+        <img class="brand-logo" src="/nidec-logo.png" alt="Nidec">
+        <div class="title-block">
+          <h1>PRINTER MODBUS MONITOR</h1>
+          <div class="screen-code">PLC / APP / MES EVENT LOG</div>
+        </div>
+      </div>
+      <div class="last-update">
+        <span class="live-indicator"></span><span id="last-update">Đang kết nối...</span>
+      </div>
+    </header>
+
+    <section class="panel production-panel" aria-label="Thống kê sản xuất">
+      <div class="panel-header">
+        <h2 class="section-title">Thống kê sản xuất</h2>
+        <button class="collapse-button" type="button" data-panel-toggle aria-expanded="true">− Thu gọn</button>
+      </div>
+      <div class="panel-content">
+        <div class="table-wrap">
+          <table id="batch-table" class="batch-table" hidden>
+            <thead>
+              <tr>
+                <th>Mã lô</th>
+                <th>Trạng thái</th>
+                <th>Bắt đầu</th>
+                <th>Kết thúc</th>
+                <th>Đã dán</th>
+                <th>Lỗi</th>
+              </tr>
+            </thead>
+            <tbody id="batch-body"></tbody>
+          </table>
+        </div>
+        <div id="batch-empty" class="empty">Chưa có lô sản xuất.</div>
+        <div id="batch-pagination" class="pagination">
+          <button id="previous-batch-page" class="page-button" type="button">Trang trước</button>
+          <span id="batch-page-info" class="page-info">Trang 1 / 1</span>
+          <button id="next-batch-page" class="page-button" type="button">Trang sau</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel register-panel" aria-label="Giá trị thanh ghi">
+      <div class="panel-header">
+        <h2 class="section-title">Giá trị thanh ghi D0-D15</h2>
+        <button class="collapse-button" type="button" data-panel-toggle aria-expanded="true">− Thu gọn</button>
+      </div>
+      <div class="panel-content">
+        <div id="register-grid" class="register-grid"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="section-title">Log giao tiếp PLC / APP / MES</h2>
+        <button class="collapse-button" type="button" data-panel-toggle aria-expanded="true">− Thu gọn</button>
+      </div>
+      <div class="panel-content">
+        <div class="toolbar">
+          <div class="filters" id="filters">
+            <button class="filter active" data-filter="all">Tất cả</button>
+            <button class="filter" data-filter="problem">Lỗi / từ chối</button>
+            <button class="filter" data-filter="start_batch">Start batch</button>
+            <button class="filter" data-filter="print_next">Print next</button>
+            <button class="filter" data-filter="reprint">Reprint</button>
+            <button class="filter" data-filter="end_batch">End batch</button>
+          </div>
+          <div id="event-count" class="event-count">0 hoạt động</div>
+        </div>
+        <div id="loading" class="loading">Đang tải nhật ký...</div>
+        <div class="table-wrap">
+          <table id="event-table" hidden>
+            <thead>
+              <tr>
+                <th>Thời gian</th>
+                <th>Luồng</th>
+                <th>Hoạt động</th>
+                <th>Kết quả</th>
+                <th>Thông tin</th>
+              </tr>
+            </thead>
+            <tbody id="event-body"></tbody>
+          </table>
+        </div>
+        <div id="empty" class="empty">Chưa có hoạt động phù hợp bộ lọc.</div>
+        <div id="pagination" class="pagination">
+          <button id="previous-page" class="page-button" type="button">Trang trước</button>
+          <span id="page-info" class="page-info">Trang 1 / 1</span>
+          <button id="next-page" class="page-button" type="button">Trang sau</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    const actionLabels = {
+      start_batch: "Start batch",
+      print_next: "Print next",
+      label_success: "In tem thành công",
+      reprint: "Reprint",
+      end_batch: "End batch",
+      reset: "Reset luồng in",
+      plc_connection: "Kết nối PLC"
+    };
+    const statusLabels = {
+      processing: "Đang xử lý",
+      success: "Thành công",
+      rejected: "MES từ chối",
+      error: "Lỗi kỹ thuật",
+      cancelled: "Đã hủy"
+    };
+    const batchStatusLabels = {
+      active: "Đang chạy",
+      done: "Đã kết thúc"
+    };
+    const registerLabels = [
+      "START", "NEXT", "PRINT OK", "REPRINT", "END", "RESET", "BOX COUNT", "RESERVED",
+      "RESERVED", "RESERVED", "START ACK", "NEXT ACK", "PRINT ACK", "REPRINT ACK", "END ACK", "RESET ACK"
+    ];
+    const visibleRegisters = [0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15];
+    let activeFilter = "all";
+    let latestPayload = null;
+    let refreshTimer = null;
+    let currentPage = 1;
+    const pageSize = 10;
+    let currentBatchPage = 1;
+    const batchPageSize = 5;
+    let isPointerSelecting = false;
+    const expandedOperationIds = new Set();
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function localTime(timestamp) {
+      if (!timestamp) return "—";
+      return new Date(timestamp * 1000).toLocaleString("vi-VN", {
+        hour12: false,
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    function hasActiveTextSelection() {
+      const selection = window.getSelection();
+      return isPointerSelecting || Boolean(
+        selection && !selection.isCollapsed && selection.toString().trim()
+      );
+    }
+
+    function renderPayload(payload) {
+      renderStatus(payload);
+      renderBatches(payload.batches || []);
+      renderEvents(payload.events || []);
+    }
+
+    function renderStatus(payload) {
+      const status = payload.status;
+      setText("last-update", `Cập nhật: ${localTime(payload.generated_at)}`);
+
+      const grid = document.getElementById("register-grid");
+      grid.replaceChildren();
+      for (const i of visibleRegisters) {
+        const registerValue = status.registers[`D${i}`];
+        const item = document.createElement("div");
+        item.className = "register";
+        if (registerValue !== undefined && registerValue !== 0) {
+          item.classList.add("active");
+        }
+        if (i >= 10 && registerValue === 2) {
+          item.classList.add("warning");
+        }
+        if (i >= 10 && registerValue === 3) {
+          item.classList.add("error");
+        }
+        const name = document.createElement("div");
+        name.className = "register-name";
+        name.textContent = `D${i} · ${registerLabels[i]}`;
+        const value = document.createElement("div");
+        value.className = "register-value";
+        value.textContent = registerValue ?? "—";
+        item.append(name, value);
+        grid.appendChild(item);
+      }
+    }
+
+    function renderBatches(batches) {
+      const totalPages = Math.max(1, Math.ceil(batches.length / batchPageSize));
+      currentBatchPage = Math.min(currentBatchPage, totalPages);
+      const startIndex = (currentBatchPage - 1) * batchPageSize;
+      const visible = batches.slice(startIndex, startIndex + batchPageSize);
+      const body = document.getElementById("batch-body");
+      body.replaceChildren();
+      for (const batch of visible) {
+        const row = document.createElement("tr");
+        const batchId = document.createElement("td");
+        batchId.className = "batch-id";
+        batchId.textContent = batch.batch_id || "—";
+        const status = document.createElement("td");
+        status.className = `batch-status ${batch.status}`;
+        status.textContent = batchStatusLabels[batch.status] || batch.status || "—";
+        const startedAt = document.createElement("td");
+        startedAt.className = "time-cell";
+        startedAt.textContent = localTime(batch.started_at);
+        const endedAt = document.createElement("td");
+        endedAt.className = "time-cell";
+        endedAt.textContent = batch.ended_at ? localTime(batch.ended_at) : "Chưa kết thúc";
+        const successCount = document.createElement("td");
+        successCount.className = "batch-number";
+        successCount.textContent = batch.success_count ?? 0;
+        const failedCount = document.createElement("td");
+        failedCount.className = "batch-number";
+        failedCount.textContent = batch.failed_count ?? 0;
+        row.append(batchId, status, startedAt, endedAt, successCount, failedCount);
+        body.appendChild(row);
+      }
+      document.getElementById("batch-table").hidden = visible.length === 0;
+      document.getElementById("batch-empty").classList.toggle("visible", visible.length === 0);
+      const pagination = document.getElementById("batch-pagination");
+      pagination.classList.toggle("visible", batches.length > 0);
+      setText("batch-page-info", `Trang ${currentBatchPage} / ${totalPages}`);
+      document.getElementById("previous-batch-page").disabled = currentBatchPage <= 1;
+      document.getElementById("next-batch-page").disabled = currentBatchPage >= totalPages;
+    }
+
+    function matchesFilter(event) {
+      if (activeFilter === "all") return true;
+      if (activeFilter === "problem") return ["rejected", "error"].includes(event.status);
+      return event.action === activeFilter;
+    }
+
+    function detailItem(label, value) {
+      const item = document.createElement("div");
+      const key = document.createElement("div");
+      key.className = "detail-label";
+      key.textContent = label;
+      const content = document.createElement("div");
+      content.className = "detail-value";
+      content.textContent = value;
+      item.append(key, content);
+      return item;
+    }
+
+    function renderEvents(events) {
+      const filtered = events.filter(matchesFilter);
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const startIndex = (currentPage - 1) * pageSize;
+      const visible = filtered.slice(startIndex, startIndex + pageSize);
+      const body = document.getElementById("event-body");
+      body.replaceChildren();
+
+      for (const event of visible) {
+        const row = document.createElement("tr");
+        row.className = "event-row";
+        row.tabIndex = 0;
+
+        const time = document.createElement("td");
+        time.className = "time-cell";
+        time.textContent = localTime(event.updated_at);
+
+        const direction = document.createElement("td");
+        direction.className = "direction";
+        direction.textContent = event.direction;
+
+        const action = document.createElement("td");
+        const actionName = document.createElement("div");
+        actionName.className = "action";
+        actionName.textContent = actionLabels[event.action] || event.action;
+        const actionSub = document.createElement("div");
+        actionSub.className = "action-sub";
+        actionSub.textContent = event.request_register >= 0 && event.response_register >= 0
+          ? `D${event.request_register} → D${event.response_register}`
+          : "Sự kiện hệ thống";
+        action.append(actionName, actionSub);
+
+        const result = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = `badge ${event.status}`;
+        badge.textContent = statusLabels[event.status] || event.status;
+        result.appendChild(badge);
+
+        const message = document.createElement("td");
+        message.className = "message";
+        message.textContent = event.message || (event.http_status ? `HTTP ${event.http_status}` : "—");
+        row.append(time, direction, action, result, message);
+
+        const detailRow = document.createElement("tr");
+        detailRow.className = "detail-row";
+        if (expandedOperationIds.has(event.operation_id)) {
+          detailRow.classList.add("open");
+        }
+        const detailCell = document.createElement("td");
+        detailCell.colSpan = 5;
+        const detail = document.createElement("div");
+        detail.className = "detail";
+        const detailGrid = document.createElement("div");
+        detailGrid.className = "detail-grid";
+        const requestValue = event.action === "start_batch" && event.request_register >= 0
+          ? `D${event.request_register} = ${event.request_value} · D6 = ${event.box_count ?? 0}`
+          : event.request_register >= 0
+            ? `D${event.request_register} = ${event.request_value}`
+            : "—";
+        const responseValue = event.response_register >= 0 ? `D${event.response_register} = ${event.response_value}` : "—";
+        detailGrid.append(
+          detailItem("PLC yêu cầu", requestValue),
+          detailItem("MES phản hồi", event.http_status ? `HTTP ${event.http_status}` : "Không gọi MES"),
+          detailItem("App phản hồi PLC", responseValue),
+          detailItem("Thời gian xử lý", event.completed_at && event.started_at ? `${Math.max(0, event.completed_at - event.started_at)} giây` : "Đang xử lý")
+        );
+        detail.appendChild(detailGrid);
+        const detailMessage = document.createElement("div");
+        detailMessage.className = "detail-message";
+        detailMessage.textContent = `Chi tiết: ${event.message || "Không có"} · Operation: ${event.operation_id}`;
+        detail.appendChild(detailMessage);
+        detailCell.appendChild(detail);
+        detailRow.appendChild(detailCell);
+
+        const toggle = () => {
+          const isOpen = detailRow.classList.toggle("open");
+          if (isOpen) {
+            expandedOperationIds.add(event.operation_id);
+          } else {
+            expandedOperationIds.delete(event.operation_id);
+          }
+        };
+        row.addEventListener("click", toggle);
+        row.addEventListener("keydown", (keyboardEvent) => {
+          if (["Enter", " "].includes(keyboardEvent.key)) {
+            keyboardEvent.preventDefault();
+            toggle();
+          }
+        });
+        body.append(row, detailRow);
+      }
+
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("event-table").hidden = visible.length === 0;
+      document.getElementById("empty").classList.toggle("visible", visible.length === 0);
+      const endIndex = Math.min(startIndex + visible.length, filtered.length);
+      setText(
+        "event-count",
+        filtered.length ? `${startIndex + 1}-${endIndex} / ${filtered.length} hoạt động` : "0 hoạt động"
+      );
+      const pagination = document.getElementById("pagination");
+      pagination.classList.toggle("visible", filtered.length > pageSize);
+      setText("page-info", `Trang ${currentPage} / ${totalPages}`);
+      document.getElementById("previous-page").disabled = currentPage <= 1;
+      document.getElementById("next-page").disabled = currentPage >= totalPages;
+
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/dashboard?limit=200", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        latestPayload = await response.json();
+        if (!hasActiveTextSelection()) {
+          renderPayload(latestPayload);
+        }
+        const nextRefresh = Math.max(500, latestPayload.refresh_ms || 1000);
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(refresh, nextRefresh);
+      } catch (error) {
+        setText("last-update", "Mất kết nối đến dashboard");
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(refresh, 2000);
+      }
+    }
+
+    document.getElementById("filters").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-filter]");
+      if (!button) return;
+      activeFilter = button.dataset.filter;
+      currentPage = 1;
+      document.querySelectorAll(".filter").forEach((item) => item.classList.toggle("active", item === button));
+      if (latestPayload) renderEvents(latestPayload.events || []);
+    });
+
+    document.getElementById("previous-page").addEventListener("click", () => {
+      if (currentPage <= 1 || !latestPayload) return;
+      currentPage -= 1;
+      renderEvents(latestPayload.events || []);
+    });
+
+    document.getElementById("next-page").addEventListener("click", () => {
+      if (!latestPayload) return;
+      currentPage += 1;
+      renderEvents(latestPayload.events || []);
+    });
+
+    document.getElementById("previous-batch-page").addEventListener("click", () => {
+      if (currentBatchPage <= 1 || !latestPayload) return;
+      currentBatchPage -= 1;
+      renderBatches(latestPayload.batches || []);
+    });
+
+    document.getElementById("next-batch-page").addEventListener("click", () => {
+      if (!latestPayload) return;
+      const totalPages = Math.max(1, Math.ceil((latestPayload.batches || []).length / batchPageSize));
+      if (currentBatchPage >= totalPages) return;
+      currentBatchPage += 1;
+      renderBatches(latestPayload.batches || []);
+    });
+
+    document.querySelectorAll("[data-panel-toggle]").forEach((button, index) => {
+      const panel = button.closest(".panel");
+      const storageKey = `dashboard-panel-${index}-collapsed`;
+      const applyState = (collapsed) => {
+        panel.classList.toggle("collapsed", collapsed);
+        button.setAttribute("aria-expanded", String(!collapsed));
+        button.textContent = collapsed ? "+ Mở rộng" : "− Thu gọn";
+        localStorage.setItem(storageKey, String(collapsed));
+      };
+      applyState(localStorage.getItem(storageKey) === "true");
+      button.addEventListener("click", () => applyState(!panel.classList.contains("collapsed")));
+    });
+
+    document.addEventListener("pointerdown", () => {
+      isPointerSelecting = true;
+    });
+    document.addEventListener("pointerup", () => {
+      isPointerSelecting = false;
+    });
+    document.addEventListener("pointercancel", () => {
+      isPointerSelecting = false;
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

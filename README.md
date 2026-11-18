@@ -36,6 +36,35 @@ Windows: C:\Users\{User_name}\.printer_modbus\printer_modbus.db
 Ubuntu:  /home/{user}/.printer_modbus/printer_modbus.db
 ```
 
+## Monitoring dashboard
+
+The application includes a read-only web dashboard for PLC-App-MES status,
+batch progress, register values, events, and errors. By default it listens on
+all LAN interfaces at:
+
+```text
+http://{server-ip}:8080
+```
+
+Dashboard settings are stored in the runtime `config.json`:
+
+```json
+{
+  "dashboard": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8080,
+    "refresh_ms": 1000,
+    "retention_days": 7
+  }
+}
+```
+
+The dashboard exposes only `GET /` and `GET /api/dashboard`. Communication
+events are stored in SQLite and automatically removed after the configured
+retention period. Dashboard startup failures are logged without stopping the
+printer workflow.
+
 ## PLC register protocol
 
 The service polls holding registers D0-D15. PLC requests and server responses are paired:

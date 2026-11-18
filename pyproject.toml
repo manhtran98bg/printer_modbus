@@ -19,6 +19,9 @@ printer_modbus = "src.main:main"
 where = ["."]
 include = ["src*"]
 
+[tool.setuptools.package-data]
+"src.infrastructure.dashboard" = ["index.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

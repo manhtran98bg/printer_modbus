@@ -7,6 +7,8 @@ from src.application.agent import PrinterModbusAgent
 from src.application.workflow import PrinterWorkflow
 from src.foundation.logging import setup_logging
 from src.infrastructure.database.service import DatabaseService
+from src.infrastructure.dashboard.service import DashboardService
+from src.infrastructure.dashboard.state import DashboardState
 from src.infrastructure.modbus.service import ModbusService
 from src.infrastructure.server.service import ServerService
 from src.infrastructure.settings_repository import SettingsRepository
@@ -25,7 +27,10 @@ class ApplicationContainer:
 
         self.event_queue: queue.Queue[object] = queue.Queue()
         self.workflow = PrinterWorkflow()
-        self.database_service = DatabaseService()
+        self.dashboard_state = DashboardState()
+        self.database_service = DatabaseService(
+            communication_retention_days=self.settings.dashboard.retention_days,
+        )
         self.modbus_service = ModbusService(
             config=self.settings.modbus,
             event_queue=self.event_queue,
@@ -34,17 +39,24 @@ class ApplicationContainer:
             config=self.settings.server,
             event_queue=self.event_queue,
         )
+        self.dashboard_service = DashboardService(
+            config=self.settings.dashboard,
+            state=self.dashboard_state,
+            db_path=self.database_service.db_path,
+        )
         self.agent = PrinterModbusAgent(
             event_queue=self.event_queue,
             workflow=self.workflow,
             modbus_service=self.modbus_service,
             server_service=self.server_service,
             database_service=self.database_service,
+            dashboard_state=self.dashboard_state,
         )
 
     def start(self) -> None:
         logger.info("Starting printer_modbus")
         self.agent.start()
+        self.dashboard_service.start()
 
     def run_forever(self) -> None:
         self.agent.run_forever()
@@ -54,6 +66,7 @@ class ApplicationContainer:
 
     def shutdown(self) -> None:
         logger.info("Shutting down printer_modbus")
+        self.dashboard_service.stop()
         self.agent.shutdown()
 
     def _log_config(self) -> None:
@@ -90,5 +103,15 @@ class ApplicationContainer:
             server.timeout,
             server.retries,
             bool(server.token),
+        )
+        dashboard = self.settings.dashboard
+        logger.info(
+            "Loaded dashboard config enabled=%s host=%s port=%s refresh_ms=%s "
+            "retention_days=%s",
+            dashboard.enabled,
+            dashboard.host,
+            dashboard.port,
+            dashboard.refresh_ms,
+            dashboard.retention_days,
         )
 

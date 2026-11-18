@@ -112,9 +112,10 @@ class ServerApiClient:
     @staticmethod
     def _response_error(payload: dict[str, object] | None, fallback: str) -> str:
         if isinstance(payload, dict):
-            message = payload.get("msg")
-            if message is not None:
-                return str(message)
+            for key in ("msg", "message"):
+                message = payload.get(key)
+                if message is not None:
+                    return str(message)
         return fallback
 
     def _headers(self) -> dict[str, str]:

@@ -28,6 +28,28 @@ class UpdateBatchSummaryCommand:
     ended_at: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class UpsertCommunicationEventCommand:
+    operation_id: str
+    batch_id: str
+    action: str
+    direction: str
+    request_register: int
+    request_value: int
+    response_register: int
+    response_value: int
+    box_count: int
+    status: str
+    http_status: int
+    message: str
+    started_at: int
+    completed_at: int
+    updated_at: int
+
+
 DatabaseCommand = (
-    InsertPlcTriggerEventCommand | StartBatchSummaryCommand | UpdateBatchSummaryCommand
+    InsertPlcTriggerEventCommand
+    | StartBatchSummaryCommand
+    | UpdateBatchSummaryCommand
+    | UpsertCommunicationEventCommand
 )

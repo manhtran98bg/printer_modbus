@@ -140,11 +140,31 @@ class ServiceConfig:
 
 
 @dataclass(slots=True)
+class DashboardConfig:
+    enabled: bool = True
+    host: str = "0.0.0.0"
+    port: int = 8080
+    refresh_ms: int = 1000
+    retention_days: int = 7
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        return cls(
+            enabled=_to_bool(data.get("enabled"), True),
+            host=str(data.get("host") or "0.0.0.0"),
+            port=max(0, min(65535, _to_int(data.get("port"), 8080))),
+            refresh_ms=max(500, _to_int(data.get("refresh_ms"), 1000)),
+            retention_days=max(1, _to_int(data.get("retention_days"), 7)),
+        )
+
+
+@dataclass(slots=True)
 class SettingsConfig:
     device: DeviceConfig = field(default_factory=DeviceConfig)
     modbus: ModbusConfig = field(default_factory=ModbusConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     service: ServiceConfig = field(default_factory=ServiceConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
@@ -153,6 +173,7 @@ class SettingsConfig:
             modbus=ModbusConfig.from_dict(data.get("modbus", {})),
             server=ServerConfig.from_dict(data.get("server", {})),
             service=ServiceConfig.from_dict(data.get("service", {})),
+            dashboard=DashboardConfig.from_dict(data.get("dashboard", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:

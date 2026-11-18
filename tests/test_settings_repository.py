@@ -19,6 +19,9 @@ def test_settings_repository_creates_default_config(tmp_path):
     assert isinstance(config, SettingsConfig)
     assert config_path.exists()
     assert config.modbus.modbus_type == "rtu"
+    assert config.dashboard.enabled is True
+    assert config.dashboard.port == 8080
+    assert config.dashboard.retention_days == 7
 
 
 def test_settings_repository_loads_tcp_config(tmp_path):

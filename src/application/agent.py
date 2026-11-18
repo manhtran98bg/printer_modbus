@@ -9,7 +9,9 @@ from src.infrastructure.database.commands import (
     InsertPlcTriggerEventCommand,
     StartBatchSummaryCommand,
     UpdateBatchSummaryCommand,
+    UpsertCommunicationEventCommand,
 )
+from src.infrastructure.dashboard.state import DashboardState
 from src.infrastructure.database.service import DatabaseService
 from src.infrastructure.modbus.commands import WriteRegistersCommand
 from src.infrastructure.modbus.service import ModbusService
@@ -34,12 +36,14 @@ class PrinterModbusAgent:
         modbus_service: ModbusService,
         server_service: ServerService,
         database_service: DatabaseService,
+        dashboard_state: DashboardState,
     ) -> None:
         self._event_queue = event_queue
         self._workflow = workflow
         self._modbus_service = modbus_service
         self._server_service = server_service
         self._database_service = database_service
+        self._dashboard_state = dashboard_state
         self._stop_event = threading.Event()
 
     def start(self) -> None:
@@ -55,7 +59,15 @@ class PrinterModbusAgent:
                 event = self._event_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
+            self._dashboard_state.observe(event)
             commands = self._workflow.handle_event(event)
+            batch = self._workflow.batch_counters
+            self._dashboard_state.update_batch(
+                batch_id=self._workflow.current_batch_id,
+                active=batch.active,
+                success_count=batch.label_success_count,
+                failed_count=batch.label_failed_count,
+            )
             for command in commands:
                 self._route_command(command)
 
@@ -76,6 +88,7 @@ class PrinterModbusAgent:
                 InsertPlcTriggerEventCommand,
                 StartBatchSummaryCommand,
                 UpdateBatchSummaryCommand,
+                UpsertCommunicationEventCommand,
             ),
         ):
             self._database_service.enqueue(command)
