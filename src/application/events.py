@@ -31,6 +31,7 @@ class ModbusErrorEvent:
 @dataclass(frozen=True, slots=True)
 class ServerRequestCompletedEvent:
     request_type: str
+    operation_id: str
     success: bool
     status_code: int = 0
     error: str = ""

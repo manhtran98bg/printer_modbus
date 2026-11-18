@@ -19,26 +19,24 @@ from src.infrastructure.database.commands import (
 )
 from src.infrastructure.modbus.commands import WriteRegistersCommand, write_single_register
 from src.infrastructure.modbus.registers import (
-    ACK_RECEIVED,
-    ATTACK_BATCH_DONE,
-    ATTACK_LABEL_FAILED,
-    ATTACK_LABEL_SUCCESS,
-    BATCH_STATE_ERROR,
-    BATCH_STATE_NEW,
-    REGISTER_ATTACK_BATCH_ACK,
-    REGISTER_ATTACK_BATCH_DONE,
-    REGISTER_ATTACK_LABEL_ACK,
-    REGISTER_ATTACK_LABEL_STATE,
-    REGISTER_BATCH_LABEL_COUNT,
-    REGISTER_BATCH_STATE,
-    REGISTER_BATCH_STATE_ACK,
-    REGISTER_BATCH_SEQUENCE_ID,
-    REGISTER_PENDING_RESET,
-    REGISTER_PRINT_NEXT_ACK,
+    REGISTER_BOX_COUNT,
+    REGISTER_END_BATCH_REQUEST,
+    REGISTER_END_BATCH_RESPONSE,
+    REGISTER_LABEL_SUCCESS_REQUEST,
+    REGISTER_LABEL_SUCCESS_RESPONSE,
     REGISTER_PRINT_NEXT_REQUEST,
-    REGISTER_RE_PRINT_ACK,
-    REGISTER_RE_PRINT_REQUEST,
+    REGISTER_PRINT_NEXT_RESPONSE,
+    REGISTER_REPRINT_REQUEST,
+    REGISTER_REPRINT_RESPONSE,
+    REGISTER_RESET_REQUEST,
+    REGISTER_RESET_RESPONSE,
+    REGISTER_START_BATCH_REQUEST,
+    REGISTER_START_BATCH_RESPONSE,
     REQUEST_ACTIVE,
+    RESPONSE_PENDING,
+    RESPONSE_REJECTED,
+    RESPONSE_SUCCESS,
+    RESPONSE_TECHNICAL_ERROR,
 )
 from src.infrastructure.server.commands import (
     EndBatchCommand,
@@ -55,11 +53,20 @@ logger = logging.getLogger(__name__)
 WorkflowCommand = WriteRegistersCommand | ServerCommand | DatabaseCommand
 
 SERVER_REQUEST_REGISTERS = {
-    "start_batch": REGISTER_BATCH_STATE,
+    "start_batch": REGISTER_START_BATCH_REQUEST,
     "print_next": REGISTER_PRINT_NEXT_REQUEST,
-    "reprint": REGISTER_RE_PRINT_REQUEST,
-    "end_batch": REGISTER_ATTACK_BATCH_DONE,
+    "reprint": REGISTER_REPRINT_REQUEST,
+    "end_batch": REGISTER_END_BATCH_REQUEST,
 }
+
+SERVER_RESPONSE_REGISTERS = {
+    "start_batch": REGISTER_START_BATCH_RESPONSE,
+    "print_next": REGISTER_PRINT_NEXT_RESPONSE,
+    "reprint": REGISTER_REPRINT_RESPONSE,
+    "end_batch": REGISTER_END_BATCH_RESPONSE,
+}
+
+SERVER_REQUEST_PRIORITY = ("end_batch", "start_batch", "print_next", "reprint")
 
 
 @dataclass(slots=True)
@@ -75,9 +82,8 @@ class PrinterWorkflow:
         self._batch = BatchCounters()
         self._slave_id = 1
         self._pending_attack = False
-        self._pending_server_requests: set[str] = set()
+        self._pending_server_requests: dict[str, str] = {}
         self._current_batch_id = ""
-        self._batch_sequence_id = 0
 
     @property
     def batch_counters(self) -> BatchCounters:
@@ -104,232 +110,201 @@ class PrinterWorkflow:
 
     def _handle_modbus_poll(self, event: ModbusPollEvent) -> list[WorkflowCommand]:
         self._slave_id = int(event.slave_id)
-        commands: list[WorkflowCommand] = []
         values = self._poll_values(event)
         self._clear_inactive_server_requests(values)
 
-        batch_state = values.get(REGISTER_BATCH_STATE, 0)
-        if self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_NEW):
-            if not self._server_request_pending("start_batch"):
-                logger.info("===============================================================================")
-                self._log_plc_event("D0=start_batch")
-                self._pending_server_requests.add("start_batch")
-                commands.append(StartBatchCommand())
-        elif self._changed_to(REGISTER_BATCH_STATE, batch_state, BATCH_STATE_ERROR):
-            now = self._timestamp()
-            self._log_plc_event("D0=batch_error")
-            commands.append(
-                self._event_command(
-                    "batch_error",
-                    REGISTER_BATCH_STATE,
-                    BATCH_STATE_ERROR,
-                    now,
-                )
-            )
-            if self._current_batch_id:
-                commands.append(
-                    self._summary_command(
-                        status="error",
-                        updated_at=now,
-                    )
-                )
-            #commands.append(self._ack(REGISTER_BATCH_STATE_ACK, ACK_RECEIVED))
-            #commands.append(self._reset(REGISTER_BATCH_STATE, 0))
+        if values.get(REGISTER_RESET_REQUEST, 0) == REQUEST_ACTIVE:
+            self._last_values.update(values)
+            return self._reset_flow_commands()
 
+        commands: list[WorkflowCommand] = []
+        label_success = values.get(REGISTER_LABEL_SUCCESS_REQUEST, 0)
         if self._changed_to(
-            REGISTER_PRINT_NEXT_REQUEST,
-            values.get(REGISTER_PRINT_NEXT_REQUEST, 0),
-            REQUEST_ACTIVE,
-        ) and not self._attack_in_progress():
-            self._log_plc_event("D1=print_next")
-            self._pending_server_requests.add("print_next")
-            commands.append(PrintNextCommand())
-
-        label_state = values.get(REGISTER_ATTACK_LABEL_STATE, 0)
-        if self._changed_to(REGISTER_ATTACK_LABEL_STATE, label_state, ATTACK_LABEL_SUCCESS):
-            now = self._timestamp()
-            if self._batch.active:
-                self._batch.label_success_count += 1
-            self._log_plc_event("D2=label_success")
-
-            commands.append(
-                self._event_command(
-                    "label_success",
-                    REGISTER_ATTACK_LABEL_STATE,
-                    ATTACK_LABEL_SUCCESS,
-                    now,
-                )
-            )
-            if self._batch.active and self._current_batch_id:
-                commands.append(self._summary_command(status="active", updated_at=now))
-            commands.append(self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_SUCCESS))
-            commands.append(self._reset(REGISTER_ATTACK_LABEL_STATE, 0))
-            self._pending_attack = False
-        elif self._changed_to(REGISTER_ATTACK_LABEL_STATE, label_state, ATTACK_LABEL_FAILED):
-            now = self._timestamp()
-            if self._batch.active:
-                self._batch.label_failed_count += 1
-            self._log_plc_event("D2=label_failed")
-            commands.append(
-                self._event_command(
-                    "label_failed",
-                    REGISTER_ATTACK_LABEL_STATE,
-                    ATTACK_LABEL_FAILED,
-                    now,
-                )
-            )
-            if self._batch.active and self._current_batch_id:
-                commands.append(self._summary_command(status="active", updated_at=now))
-            commands.append(self._ack(REGISTER_ATTACK_LABEL_ACK, ATTACK_LABEL_FAILED))
-            commands.append(self._reset(REGISTER_ATTACK_LABEL_STATE, 0))
-            self._pending_attack = False
-        if self._changed_to(
-            REGISTER_RE_PRINT_REQUEST,
-            values.get(REGISTER_RE_PRINT_REQUEST, 0),
-            REQUEST_ACTIVE,
-        ) and not self._attack_in_progress():
-            self._log_plc_event("D3=reprint")
-            self._pending_server_requests.add("reprint")
-            commands.append(RePrintCommand())
-
-        if self._changed_to(
-            REGISTER_ATTACK_BATCH_DONE,
-            values.get(REGISTER_ATTACK_BATCH_DONE, 0),
-            ATTACK_BATCH_DONE,
-        ):
-            if not self._server_request_pending("end_batch"):
-                self._log_plc_event("D4=end_batch")
-                self._pending_server_requests.add("end_batch")
-                commands.append(EndBatchCommand())
-                commands.extend(self._end_batch_commands(self._timestamp()))
-                commands.append(self._reset(REGISTER_PENDING_RESET, 0))
-                commands.append(self._reset(REGISTER_PRINT_NEXT_REQUEST, 0))
-                commands.append(self._reset(REGISTER_ATTACK_LABEL_STATE, 0))
-                commands.append(self._reset(REGISTER_RE_PRINT_REQUEST, 0))
-
-        if self._changed_to(
-            REGISTER_PENDING_RESET,
-            values.get(REGISTER_PENDING_RESET, 0),
+            REGISTER_LABEL_SUCCESS_REQUEST,
+            label_success,
             REQUEST_ACTIVE,
         ):
-            self._log_plc_event("D5=pending_reset")
-            self._pending_attack = False
-            commands.append(self._reset(REGISTER_PENDING_RESET, 0))
-            commands.append(self._reset(REGISTER_BATCH_STATE, 0))
-            commands.append(self._reset(REGISTER_PRINT_NEXT_REQUEST, 0))
-            commands.append(self._reset(REGISTER_ATTACK_LABEL_STATE, 0))
-            commands.append(self._reset(REGISTER_RE_PRINT_REQUEST, 0))
-        for address, value in values.items():
-            self._last_values[address] = value
+            commands.extend(self._label_success_commands(self._timestamp()))
+
+        if not self._pending_server_requests:
+            commands.extend(self._next_server_request(values))
+
+        self._last_values.update(values)
         return commands
+
+    def _next_server_request(self, values: dict[int, int]) -> list[WorkflowCommand]:
+        for request_type in SERVER_REQUEST_PRIORITY:
+            request_register = SERVER_REQUEST_REGISTERS[request_type]
+            if values.get(request_register, 0) != REQUEST_ACTIVE:
+                continue
+            if request_type in {"print_next", "reprint"} and self._attack_in_progress():
+                continue
+
+            operation_id = uuid.uuid4().hex
+            self._pending_server_requests[request_type] = operation_id
+            response_register = SERVER_RESPONSE_REGISTERS[request_type]
+            self._log_plc_event(f"D{request_register}={request_type}")
+
+            if request_type == "end_batch":
+                command: ServerCommand = EndBatchCommand(operation_id=operation_id)
+            elif request_type == "start_batch":
+                command = StartBatchCommand(
+                    operation_id=operation_id,
+                    box_count=int(values.get(REGISTER_BOX_COUNT, 0)),
+                )
+            elif request_type == "print_next":
+                command = PrintNextCommand(operation_id=operation_id)
+            else:
+                command = RePrintCommand(operation_id=operation_id)
+
+            return [
+                self._write(response_register, RESPONSE_PENDING),
+                command,
+            ]
+        return []
 
     def _handle_server_completed(
         self,
         event: ServerRequestCompletedEvent,
     ) -> list[WorkflowCommand]:
-        if not event.success:
-            self._pending_server_requests.discard(event.request_type)
+        pending_operation_id = self._pending_server_requests.get(event.request_type)
+        if pending_operation_id != event.operation_id:
+            logger.info(
+                "Ignoring stale server completion request_type=%s operation_id=%s",
+                event.request_type,
+                event.operation_id,
+            )
             return []
 
-        if event.request_type == "print_next":
-            self._pending_attack = True
-            now = self._timestamp()
-            return [
-                self._event_command(
-                    "print_next_request",
-                    REGISTER_PRINT_NEXT_REQUEST,
-                    REQUEST_ACTIVE,
-                    now,
-                ),
-                self._reset(REGISTER_PRINT_NEXT_REQUEST, 0),
-                self._ack(REGISTER_PRINT_NEXT_ACK, ACK_RECEIVED),
-            ]
-        if event.request_type == "reprint":
-            self._pending_attack = True
-            now = self._timestamp()
-            return [
-                self._event_command(
-                    "reprint_request",
-                    REGISTER_RE_PRINT_REQUEST,
-                    REQUEST_ACTIVE,
-                    now,
-                ),
-                self._reset(REGISTER_RE_PRINT_REQUEST, 0),
-                self._ack(REGISTER_RE_PRINT_ACK, ACK_RECEIVED),
-            ]
-        if event.request_type == "start_batch":
-            label_count = self._start_batch_label_count(event.payload)
-            if label_count is None:
-                self._pending_server_requests.discard(event.request_type)
-                return []
-            sequence_id = self._next_batch_sequence_id()
-            return [
-                self._ack(REGISTER_BATCH_SEQUENCE_ID, sequence_id),
-                self._ack(REGISTER_BATCH_LABEL_COUNT, label_count),
-                *self._start_batch_commands(self._timestamp()),
-                self._reset(REGISTER_BATCH_STATE, 0),
-                self._ack(REGISTER_BATCH_STATE_ACK, ACK_RECEIVED),
-            ]
-        if event.request_type == "end_batch":
+        request_register = SERVER_REQUEST_REGISTERS.get(event.request_type)
+        response_register = SERVER_RESPONSE_REGISTERS.get(event.request_type)
+        if request_register is None or response_register is None:
             return []
-        return []
 
-    def _poll_values(self, event: ModbusPollEvent) -> dict[int, int]:
+        response_value = self._response_value(event)
+        commands: list[WorkflowCommand] = []
+        now = self._timestamp()
+
+        if response_value == RESPONSE_SUCCESS:
+            if event.request_type == "start_batch":
+                commands.extend(self._start_batch_commands(now))
+            elif event.request_type == "print_next":
+                self._pending_attack = True
+                commands.append(
+                    self._event_command(
+                        "print_next_request",
+                        REGISTER_PRINT_NEXT_REQUEST,
+                        REQUEST_ACTIVE,
+                        now,
+                    )
+                )
+            elif event.request_type == "reprint":
+                self._pending_attack = True
+                commands.append(
+                    self._event_command(
+                        "reprint_request",
+                        REGISTER_REPRINT_REQUEST,
+                        REQUEST_ACTIVE,
+                        now,
+                    )
+                )
+            elif event.request_type == "end_batch":
+                commands.extend(self._end_batch_commands(now))
+        else:
+            logger.warning(
+                "Server request rejected or failed request_type=%s status=%s error=%s",
+                event.request_type,
+                event.status_code,
+                event.error,
+            )
+
+        commands.extend(
+            [
+                self._write(response_register, response_value),
+                self._reset(request_register),
+            ]
+        )
+        return commands
+
+    def _label_success_commands(self, now: int) -> list[WorkflowCommand]:
+        if self._batch.active:
+            self._batch.label_success_count += 1
+        self._pending_attack = False
+        self._log_plc_event("D2=label_success")
+
+        commands: list[WorkflowCommand] = [
+            self._event_command(
+                "label_success",
+                REGISTER_LABEL_SUCCESS_REQUEST,
+                REQUEST_ACTIVE,
+                now,
+            )
+        ]
+        if self._batch.active and self._current_batch_id:
+            commands.append(self._summary_command(status="active", updated_at=now))
+        commands.extend(
+            [
+                self._write(REGISTER_LABEL_SUCCESS_RESPONSE, RESPONSE_SUCCESS),
+                self._reset(REGISTER_LABEL_SUCCESS_REQUEST),
+            ]
+        )
+        return commands
+
+    def _reset_flow_commands(self) -> list[WorkflowCommand]:
+        self._pending_attack = False
+        self._pending_server_requests.clear()
+        self._log_plc_event("D5=reset")
+        return [
+            self._reset(REGISTER_START_BATCH_REQUEST),
+            self._reset(REGISTER_PRINT_NEXT_REQUEST),
+            self._reset(REGISTER_LABEL_SUCCESS_REQUEST),
+            self._reset(REGISTER_REPRINT_REQUEST),
+            self._write(REGISTER_RESET_RESPONSE, RESPONSE_SUCCESS),
+            self._reset(REGISTER_RESET_REQUEST),
+        ]
+
+    @staticmethod
+    def _response_value(event: ServerRequestCompletedEvent) -> int:
+        if event.success and 200 <= int(event.status_code) <= 299:
+            return RESPONSE_SUCCESS
+        if 400 <= int(event.status_code) <= 499:
+            return RESPONSE_REJECTED
+        return RESPONSE_TECHNICAL_ERROR
+
+    @staticmethod
+    def _poll_values(event: ModbusPollEvent) -> dict[int, int]:
         return {
             int(event.start_address) + index: int(value)
             for index, value in enumerate(event.registers)
         }
 
     def _changed_to(self, address: int, value: int, target: int) -> bool:
-        #return int(value) == int(target) and self._last_values.get(address, 0) != int(target)
-        return int(value) == int(target)
+        return (
+            int(value) == int(target)
+            and self._last_values.get(address, 0) != int(target)
+        )
 
     def _clear_inactive_server_requests(self, values: dict[int, int]) -> None:
         for request_type, address in SERVER_REQUEST_REGISTERS.items():
             if values.get(address, 0) != REQUEST_ACTIVE:
-                self._pending_server_requests.discard(request_type)
-
-    def _server_request_pending(self, request_type: str) -> bool:
-        return request_type in self._pending_server_requests
+                self._pending_server_requests.pop(request_type, None)
 
     def _attack_in_progress(self) -> bool:
         return (
             self._pending_attack
-            or self._server_request_pending("print_next")
-            or self._server_request_pending("reprint")
+            or "print_next" in self._pending_server_requests
+            or "reprint" in self._pending_server_requests
         )
 
     def _log_plc_event(self, event_name: str) -> None:
         logger.info("PLC event received: %s", event_name)
-
-    def _start_batch_label_count(self, payload: dict[str, object] | None) -> int | None:
-        if not isinstance(payload, dict):
-            return None
-        metadata = payload.get("metaData")
-        if not isinstance(metadata, dict):
-            return None
-        value = metadata.get("label_counting")
-        if isinstance(value, bool):
-            return None
-        try:
-            label_count = int(value)
-        except (TypeError, ValueError):
-            return None
-        if label_count < 0:
-            return None
-        return label_count
-
-    def _next_batch_sequence_id(self) -> int:
-        self._batch_sequence_id += 1
-        if self._batch_sequence_id > 65535:
-            self._batch_sequence_id = 1
-        return self._batch_sequence_id
 
     def _start_batch_commands(self, now: int) -> list[WorkflowCommand]:
         self._current_batch_id = uuid.uuid4().hex
         self._batch.active = True
         self._batch.label_success_count = 0
         self._batch.label_failed_count = 0
+        self._pending_attack = False
         return [
             StartBatchSummaryCommand(
                 batch_id=self._current_batch_id,
@@ -337,19 +312,20 @@ class PrinterWorkflow:
             ),
             self._event_command(
                 "batch_started",
-                REGISTER_BATCH_STATE,
-                BATCH_STATE_NEW,
+                REGISTER_START_BATCH_REQUEST,
+                REQUEST_ACTIVE,
                 now,
-            )
+            ),
         ]
 
     def _end_batch_commands(self, now: int) -> list[WorkflowCommand]:
         self._batch.active = False
+        self._pending_attack = False
         commands: list[WorkflowCommand] = [
             self._event_command(
                 "batch_done",
-                REGISTER_ATTACK_BATCH_DONE,
-                ATTACK_BATCH_DONE,
+                REGISTER_END_BATCH_REQUEST,
+                REQUEST_ACTIVE,
                 now,
             )
         ]
@@ -361,26 +337,18 @@ class PrinterWorkflow:
                     ended_at=now,
                 )
             )
-        commands.extend(
-            [
-                self._reset(REGISTER_ATTACK_BATCH_DONE, 0),
-                self._ack(REGISTER_ATTACK_BATCH_ACK, ACK_RECEIVED),
-            ]
-        )
         return commands
 
-    def _ack(self, address: int, value: int) -> WriteRegistersCommand:
+    def _write(self, address: int, value: int) -> WriteRegistersCommand:
         return write_single_register(
             slave_id=self._slave_id,
             address=address,
             value=value,
         )
-    def _reset(self, address: int, value: int) -> WriteRegistersCommand:
-        return write_single_register(
-            slave_id=self._slave_id,
-            address=address,
-            value=value,
-        )
+
+    def _reset(self, address: int) -> WriteRegistersCommand:
+        return self._write(address, 0)
+
     def _event_command(
         self,
         event_type: str,

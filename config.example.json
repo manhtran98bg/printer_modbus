@@ -24,12 +24,14 @@
   },
   "server": {
     "enabled": true,
-    "base_url": "http://localhost:8000",
+    "base_url": "http://172.28.79.126:3412",
     "token": "",
     "timeout": 10,
     "retries": 3,
-    "print_next_path": "/print-next",
-    "reprint_path": "/reprint"
+    "start_batch_path": "/print-history/start-batch",
+    "print_next_path": "/print-history/next",
+    "reprint_path": "/print-history/re-print",
+    "end_batch_path": "/print-history/end-batch"
   },
   "service": {
     "log_level": "INFO"

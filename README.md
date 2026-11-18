@@ -35,3 +35,21 @@ SQLite runtime database is stored at:
 Windows: C:\Users\{User_name}\.printer_modbus\printer_modbus.db
 Ubuntu:  /home/{user}/.printer_modbus/printer_modbus.db
 ```
+
+## PLC register protocol
+
+The service polls holding registers D0-D15. PLC requests and server responses are paired:
+
+| Request | Operation | Response |
+| --- | --- | --- |
+| D0 | Start batch with `box_count` from D6 | D10 |
+| D1 | Print next | D11 |
+| D2 | Label printed successfully | D12 |
+| D3 | Reprint | D13 |
+| D4 | End batch | D14 |
+| D5 | Reset print flow | D15 |
+
+Response values are `0` while pending, `1` for success, `2` for an HTTP 4xx rejection,
+and `3` for an HTTP 5xx, timeout, or network failure. The service writes the response
+before resetting the request register. The PLC must clear the response register before
+starting a new request.

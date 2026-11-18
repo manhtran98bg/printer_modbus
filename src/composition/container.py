@@ -78,12 +78,15 @@ class ApplicationContainer:
             modbus.tcp.port,
         )
         logger.info(
-            "Loaded server config enabled=%s base_url=%s print_next_path=%s "
-            "reprint_path=%s timeout=%s retries=%s token_configured=%s",
+            "Loaded server config enabled=%s base_url=%s start_batch_path=%s "
+            "print_next_path=%s reprint_path=%s end_batch_path=%s timeout=%s "
+            "retries=%s token_configured=%s",
             server.enabled,
             server.base_url,
+            server.start_batch_path,
             server.print_next_path,
             server.reprint_path,
+            server.end_batch_path,
             server.timeout,
             server.retries,
             bool(server.token),

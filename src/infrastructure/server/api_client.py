@@ -8,10 +8,6 @@ from urllib.request import Request, urlopen
 from src.models.settings import ServerConfig
 
 
-START_BATCH_URL = "http://172.28.79.126:3412/print-history/start-batch"
-END_BATCH_URL = "http://172.28.79.126:3412/print-history/end-batch"
-
-
 @dataclass(frozen=True, slots=True)
 class ServerResponse:
     success: bool
@@ -30,34 +26,57 @@ class ServerApiClient:
     def reprint(self) -> ServerResponse:
         return self._post_no_body(self._config.reprint_path)
 
-    def start_batch(self) -> ServerResponse:
-        return self._post_url_no_body(START_BATCH_URL)
+    def start_batch(self, box_count: int) -> ServerResponse:
+        return self._post_json(
+            self._config.start_batch_path,
+            {"box_count": int(box_count)},
+        )
 
     def end_batch(self) -> ServerResponse:
-        return self._post_url_no_body(END_BATCH_URL)
+        return self._post_no_body(self._config.end_batch_path)
 
     def _post_no_body(self, path: str) -> ServerResponse:
-        return self._post_url_no_body(self._url(path))
+        return self._post_url(self._url(path))
 
-    def _post_url_no_body(self, url: str) -> ServerResponse:
-        request = Request(url, method="POST", headers=self._headers())
+    def _post_json(self, path: str, payload: dict[str, object]) -> ServerResponse:
+        body = json.dumps(payload).encode("utf-8")
+        return self._post_url(self._url(path), body=body)
+
+    def _post_url(self, url: str, *, body: bytes | None = None) -> ServerResponse:
+        request = Request(url, data=body, method="POST", headers=self._headers())
         last_response = ServerResponse(success=False, status_code=0, error="request not sent")
-        for _attempt in range(max(1, int(self._config.retries))):
+        attempts = max(1, int(self._config.retries))
+        for attempt in range(attempts):
             try:
                 with urlopen(request, timeout=float(self._config.timeout)) as response:
                     status_code = int(response.status)
                     payload = self._read_json_payload(response)
-                    return ServerResponse(
+                    result = ServerResponse(
                         success=200 <= status_code <= 299,
                         status_code=status_code,
                         payload=payload,
                     )
+                    if 500 <= status_code <= 599 and attempt + 1 < attempts:
+                        last_response = result
+                        continue
+                    return result
             except HTTPError as exc:
+                raw_body = exc.read()
+                payload = self._decode_json_payload(raw_body)
+                error = self._response_error(
+                    payload,
+                    raw_body.decode("utf-8", "ignore"),
+                )
                 last_response = ServerResponse(
                     success=False,
                     status_code=int(exc.code),
-                    error=exc.read().decode("utf-8", "ignore"),
+                    error=error,
+                    payload=payload,
                 )
+                if 400 <= int(exc.code) <= 499:
+                    return last_response
+                if not 500 <= int(exc.code) <= 599:
+                    return last_response
             except (TimeoutError, URLError, OSError) as exc:
                 last_response = ServerResponse(success=False, status_code=0, error=str(exc))
         return last_response
@@ -72,6 +91,10 @@ class ServerApiClient:
         if not callable(read):
             return None
         raw_body = read()
+        return self._decode_json_payload(raw_body)
+
+    @staticmethod
+    def _decode_json_payload(raw_body: object) -> dict[str, object] | None:
         if not raw_body:
             return None
         if isinstance(raw_body, bytes):
@@ -85,6 +108,14 @@ class ServerApiClient:
         if isinstance(payload, dict):
             return payload
         return None
+
+    @staticmethod
+    def _response_error(payload: dict[str, object] | None, fallback: str) -> str:
+        if isinstance(payload, dict):
+            message = payload.get("msg")
+            if message is not None:
+                return str(message)
+        return fallback
 
     def _headers(self) -> dict[str, str]:
         headers = {

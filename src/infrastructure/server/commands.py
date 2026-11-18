@@ -5,22 +5,23 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class PrintNextCommand:
-    pass
+    operation_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class RePrintCommand:
-    pass
+    operation_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class StartBatchCommand:
-    pass
+    operation_id: str
+    box_count: int
 
 
 @dataclass(frozen=True, slots=True)
 class EndBatchCommand:
-    pass
+    operation_id: str
 
 
 ServerCommand = PrintNextCommand | RePrintCommand | StartBatchCommand | EndBatchCommand

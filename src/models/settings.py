@@ -104,23 +104,29 @@ class ModbusConfig:
 @dataclass(slots=True)
 class ServerConfig:
     enabled: bool = True
-    base_url: str = "http://localhost:8000"
+    base_url: str = "http://172.28.79.126:3412"
     token: str = DEFAULT_SERVER_TOKEN
     timeout: int = 10
     retries: int = 3
-    print_next_path: str = "/print-next"
-    reprint_path: str = "/reprint"
+    start_batch_path: str = "/print-history/start-batch"
+    print_next_path: str = "/print-history/next"
+    reprint_path: str = "/print-history/re-print"
+    end_batch_path: str = "/print-history/end-batch"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         return cls(
             enabled=_to_bool(data.get("enabled"), True),
-            base_url=str(data.get("base_url") or "http://localhost:8000"),
+            base_url=str(data.get("base_url") or "http://172.28.79.126:3412"),
             token=str(data.get("token") or DEFAULT_SERVER_TOKEN),
             timeout=max(1, _to_int(data.get("timeout"), 10)),
             retries=max(1, _to_int(data.get("retries"), 3)),
-            print_next_path=str(data.get("print_next_path") or "/print-next"),
-            reprint_path=str(data.get("reprint_path") or "/reprint"),
+            start_batch_path=str(
+                data.get("start_batch_path") or "/print-history/start-batch"
+            ),
+            print_next_path=str(data.get("print_next_path") or "/print-history/next"),
+            reprint_path=str(data.get("reprint_path") or "/print-history/re-print"),
+            end_batch_path=str(data.get("end_batch_path") or "/print-history/end-batch"),
         )
 
 
