@@ -71,12 +71,16 @@ The service polls holding registers D0-D15. PLC requests and server responses ar
 
 | Request | Operation | Response |
 | --- | --- | --- |
-| D0 | Start batch with `box_count` from D6 | D10 |
+| D0 | Start batch with configured `box_count` (`0` or D6) | D10 |
 | D1 | Print next | D11 |
 | D2 | Label printed successfully | D12 |
 | D3 | Reprint | D13 |
 | D4 | End batch | D14 |
 | D5 | Reset print flow | D15 |
+
+For backward compatibility with PLC programs that do not populate D6 yet,
+`server.use_d6_box_count` defaults to `false`. In that mode, start batch sends
+`{"box_count": 0}`. Set it to `true` to send the value read from D6.
 
 Response values are `0` while pending, `1` for success, `2` for an HTTP 4xx rejection,
 and `3` for an HTTP 5xx, timeout, or network failure. The service writes the response

@@ -24,6 +24,7 @@
   },
   "server": {
     "enabled": true,
+    "use_d6_box_count": false,
     "base_url": "http://172.28.79.126:3412",
     "token": "",
     "timeout": 10,

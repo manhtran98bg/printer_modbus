@@ -26,7 +26,9 @@ class ApplicationContainer:
         self._log_config()
 
         self.event_queue: queue.Queue[object] = queue.Queue()
-        self.workflow = PrinterWorkflow()
+        self.workflow = PrinterWorkflow(
+            use_d6_box_count=self.settings.server.use_d6_box_count,
+        )
         self.dashboard_state = DashboardState()
         self.database_service = DatabaseService(
             communication_retention_days=self.settings.dashboard.retention_days,
@@ -91,10 +93,12 @@ class ApplicationContainer:
             modbus.tcp.port,
         )
         logger.info(
-            "Loaded server config enabled=%s base_url=%s start_batch_path=%s "
+            "Loaded server config enabled=%s use_d6_box_count=%s base_url=%s "
+            "start_batch_path=%s "
             "print_next_path=%s reprint_path=%s end_batch_path=%s timeout=%s "
             "retries=%s token_configured=%s",
             server.enabled,
+            server.use_d6_box_count,
             server.base_url,
             server.start_batch_path,
             server.print_next_path,

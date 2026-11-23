@@ -79,7 +79,8 @@ class BatchCounters:
 
 
 class PrinterWorkflow:
-    def __init__(self) -> None:
+    def __init__(self, *, use_d6_box_count: bool = False) -> None:
+        self._use_d6_box_count = bool(use_d6_box_count)
         self._last_values: dict[int, int] = {}
         self._batch = BatchCounters()
         self._slave_id = 1
@@ -148,7 +149,11 @@ class PrinterWorkflow:
 
             operation_id = uuid.uuid4().hex
             started_at = self._timestamp()
-            box_count = int(values.get(REGISTER_BOX_COUNT, 0))
+            box_count = (
+                int(values.get(REGISTER_BOX_COUNT, 0))
+                if request_type == "start_batch" and self._use_d6_box_count
+                else 0
+            )
             self._pending_server_requests[request_type] = operation_id
             self._pending_started_at[request_type] = started_at
             self._pending_box_counts[request_type] = box_count

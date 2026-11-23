@@ -174,8 +174,14 @@ def test_server_api_client_uses_bearer_headers():
 
 
 def test_server_config_paths_default_and_can_be_overridden():
-    config = ServerConfig.from_dict({"print_next_path": "/custom-next"})
+    config = ServerConfig.from_dict(
+        {
+            "print_next_path": "/custom-next",
+            "use_d6_box_count": True,
+        }
+    )
 
+    assert config.use_d6_box_count is True
     assert config.start_batch_path == "/print-history/start-batch"
     assert config.print_next_path == "/custom-next"
     assert config.reprint_path == "/print-history/re-print"

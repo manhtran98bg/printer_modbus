@@ -22,6 +22,7 @@ def test_settings_repository_creates_default_config(tmp_path):
     assert config.dashboard.enabled is True
     assert config.dashboard.port == 8080
     assert config.dashboard.retention_days == 7
+    assert config.server.use_d6_box_count is False
 
 
 def test_settings_repository_loads_tcp_config(tmp_path):
@@ -47,4 +48,16 @@ def test_settings_repository_loads_tcp_config(tmp_path):
     assert config.modbus.modbus_type == "tcp"
     assert config.modbus.tcp.host == "192.168.1.10"
     assert config.modbus.tcp.port == 1502
+
+
+def test_settings_repository_loads_d6_box_count_flag(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"server": {"use_d6_box_count": true}}',
+        encoding="utf-8",
+    )
+
+    config = SettingsRepository(config_path).load()
+
+    assert config.server.use_d6_box_count is True
 

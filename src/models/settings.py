@@ -104,6 +104,7 @@ class ModbusConfig:
 @dataclass(slots=True)
 class ServerConfig:
     enabled: bool = True
+    use_d6_box_count: bool = False
     base_url: str = "http://172.28.79.126:3412"
     token: str = DEFAULT_SERVER_TOKEN
     timeout: int = 10
@@ -117,6 +118,7 @@ class ServerConfig:
     def from_dict(cls, data: dict[str, Any]) -> Self:
         return cls(
             enabled=_to_bool(data.get("enabled"), True),
+            use_d6_box_count=_to_bool(data.get("use_d6_box_count"), False),
             base_url=str(data.get("base_url") or "http://172.28.79.126:3412"),
             token=str(data.get("token") or DEFAULT_SERVER_TOKEN),
             timeout=max(1, _to_int(data.get("timeout"), 10)),

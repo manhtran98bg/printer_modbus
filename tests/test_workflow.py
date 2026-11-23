@@ -104,7 +104,7 @@ def start_active_batch(workflow: PrinterWorkflow) -> None:
 
 
 def test_start_batch_reads_box_count_and_marks_response_pending():
-    workflow = PrinterWorkflow()
+    workflow = PrinterWorkflow(use_d6_box_count=True)
 
     commands = workflow.handle_event(poll(d0=1, d6=12))
 
@@ -112,6 +112,18 @@ def test_start_batch_reads_box_count_and_marks_response_pending():
     assert isinstance(commands[1], StartBatchCommand)
     assert commands[1].box_count == 12
     assert len(commands[1].operation_id) == 32
+
+
+def test_start_batch_sends_zero_when_d6_box_count_is_disabled():
+    workflow = PrinterWorkflow(use_d6_box_count=False)
+
+    commands = workflow.handle_event(poll(d0=1, d6=12))
+
+    assert isinstance(commands[1], StartBatchCommand)
+    assert commands[1].box_count == 0
+    dashboard_event = commands[2]
+    assert isinstance(dashboard_event, UpsertCommunicationEventCommand)
+    assert dashboard_event.box_count == 0
 
 
 def test_start_batch_success_starts_local_batch_then_responds_and_resets_request():
@@ -259,7 +271,7 @@ def test_dashboard_operation_is_completed_after_response_register_write():
 
 
 def test_start_batch_success_log_includes_mes_identity_and_box_count():
-    workflow = PrinterWorkflow()
+    workflow = PrinterWorkflow(use_d6_box_count=True)
     trigger = workflow.handle_event(poll(d0=1, d6=4))
     command = trigger[1]
     assert isinstance(command, StartBatchCommand)
