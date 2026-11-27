@@ -17,3 +17,4 @@ def test_register_addresses():
     assert registers.REGISTER_REPRINT_RESPONSE == 13
     assert registers.REGISTER_END_BATCH_RESPONSE == 14
     assert registers.REGISTER_RESET_RESPONSE == 15
+    assert registers.REGISTER_AUTOBOX_COUNT == 18

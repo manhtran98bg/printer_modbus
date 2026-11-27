@@ -21,6 +21,7 @@ from src.infrastructure.database.commands import (
 )
 from src.infrastructure.modbus.commands import WriteRegistersCommand, write_single_register
 from src.infrastructure.modbus.registers import (
+    REGISTER_AUTOBOX_COUNT,
     REGISTER_BOX_COUNT,
     REGISTER_END_BATCH_REQUEST,
     REGISTER_END_BATCH_RESPONSE,
@@ -208,6 +209,15 @@ class PrinterWorkflow:
             return []
 
         response_value = self._response_value(event)
+        autobox_count: int | None = None
+        validation_error = ""
+        if event.request_type == "start_batch" and response_value == RESPONSE_SUCCESS:
+            autobox_count = self._start_batch_autobox_count(event)
+            if autobox_count is None:
+                response_value = RESPONSE_TECHNICAL_ERROR
+                validation_error = (
+                    "MES phản hồi thiếu hoặc sai metaData.autobox_count"
+                )
         commands: list[WorkflowCommand] = []
         now = self._timestamp()
         started_at = self._pending_started_at.get(event.request_type, now)
@@ -215,7 +225,9 @@ class PrinterWorkflow:
 
         if response_value == RESPONSE_SUCCESS:
             if event.request_type == "start_batch":
+                assert autobox_count is not None
                 commands.extend(self._start_batch_commands(now, event))
+                commands.append(self._write(REGISTER_AUTOBOX_COUNT, autobox_count))
             elif event.request_type == "print_next":
                 self._pending_attack = True
                 commands.append(
@@ -243,11 +255,11 @@ class PrinterWorkflow:
                 "Server request rejected or failed request_type=%s status=%s error=%s",
                 event.request_type,
                 event.status_code,
-                event.error,
+                validation_error or event.error,
             )
 
         dashboard_status = self._dashboard_status(response_value)
-        dashboard_message = self._dashboard_message(
+        dashboard_message = validation_error or self._dashboard_message(
             event,
             dashboard_status,
             box_count=box_count,
@@ -703,6 +715,26 @@ class PrinterWorkflow:
             return None
         metadata = event.payload.get("metaData")
         return metadata if isinstance(metadata, dict) else None
+
+    @staticmethod
+    def _start_batch_autobox_count(
+        event: ServerRequestCompletedEvent,
+    ) -> int | None:
+        metadata = PrinterWorkflow._mes_metadata(event)
+        if metadata is None:
+            return None
+        value = metadata.get("autobox_count")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, float) and not value.is_integer():
+            return None
+        try:
+            autobox_count = int(value)
+        except (TypeError, ValueError):
+            return None
+        if not 0 <= autobox_count <= 65535:
+            return None
+        return autobox_count
 
     @staticmethod
     def _batch_id_component(value: object) -> str:

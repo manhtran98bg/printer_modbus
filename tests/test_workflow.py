@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from src.application.events import (
     ModbusPollEvent,
     ModbusWriteEvent,
@@ -16,6 +18,7 @@ from src.infrastructure.database.commands import (
 )
 from src.infrastructure.modbus.commands import WriteRegistersCommand
 from src.infrastructure.modbus.registers import (
+    REGISTER_AUTOBOX_COUNT,
     REGISTER_END_BATCH_REQUEST,
     REGISTER_END_BATCH_RESPONSE,
     REGISTER_LABEL_SUCCESS_REQUEST,
@@ -96,6 +99,7 @@ def start_active_batch(workflow: PrinterWorkflow) -> None:
                 "metaData": {
                     "machine_id": "M16-02",
                     "order_id": "ORD-407038",
+                    "autobox_count": 3,
                 }
             },
         )
@@ -142,6 +146,7 @@ def test_start_batch_success_starts_local_batch_then_responds_and_resets_request
                 "metaData": {
                     "machine_id": "M16-02",
                     "order_id": "ORD-407038",
+                    "autobox_count": 3,
                 }
             },
         )
@@ -150,6 +155,7 @@ def test_start_batch_success_starts_local_batch_then_responds_and_resets_request
     assert isinstance(commands[0], StartBatchSummaryCommand)
     assert isinstance(commands[1], InsertPlcTriggerEventCommand)
     response_writes = writes(commands)
+    assert_write(response_writes[-3], REGISTER_AUTOBOX_COUNT, 3)
     assert_write(response_writes[-2], REGISTER_START_BATCH_RESPONSE, 1)
     assert_write(response_writes[-1], REGISTER_START_BATCH_REQUEST, 0)
     assert workflow.batch_counters.active is True
@@ -158,6 +164,86 @@ def test_start_batch_success_starts_local_batch_then_responds_and_resets_request
         workflow.current_batch_id,
     )
     assert commands[0].batch_id == workflow.current_batch_id
+
+
+@pytest.mark.parametrize(("value", "expected"), [(0, 0), ("3", 3)])
+def test_start_batch_accepts_integer_compatible_autobox_count(value, expected):
+    workflow = PrinterWorkflow()
+    trigger = workflow.handle_event(poll(d0=1))
+    command = trigger[1]
+    assert isinstance(command, StartBatchCommand)
+
+    commands = workflow.handle_event(
+        completion(
+            command,
+            "start_batch",
+            status_code=200,
+            success=True,
+            payload={
+                "metaData": {
+                    "machine_id": "M16-02",
+                    "order_id": "ORD-407038",
+                    "autobox_count": value,
+                }
+            },
+        )
+    )
+
+    response_writes = writes(commands)
+    assert_write(response_writes[-3], REGISTER_AUTOBOX_COUNT, expected)
+    assert_write(response_writes[-2], REGISTER_START_BATCH_RESPONSE, 1)
+    assert_write(response_writes[-1], REGISTER_START_BATCH_REQUEST, 0)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"machine_id": "M16-02", "order_id": "ORD-407038"},
+        {"autobox_count": None},
+        {"autobox_count": True},
+        {"autobox_count": "invalid"},
+        {"autobox_count": -1},
+        {"autobox_count": 65536},
+        {"autobox_count": 3.5},
+    ],
+)
+def test_start_batch_invalid_autobox_count_maps_to_technical_error(metadata):
+    workflow = PrinterWorkflow()
+    trigger = workflow.handle_event(poll(d0=1))
+    command = trigger[1]
+    assert isinstance(command, StartBatchCommand)
+
+    commands = workflow.handle_event(
+        completion(
+            command,
+            "start_batch",
+            status_code=200,
+            success=True,
+            payload={"metaData": metadata},
+        )
+    )
+
+    response_writes = writes(commands)
+    assert len(response_writes) == 2
+    assert_write(response_writes[0], REGISTER_START_BATCH_RESPONSE, 3)
+    assert_write(response_writes[1], REGISTER_START_BATCH_REQUEST, 0)
+    assert workflow.batch_counters.active is False
+    assert workflow.current_batch_id == ""
+
+    dashboard_commands = workflow.handle_event(
+        ModbusWriteEvent(
+            sequence=2,
+            slave_id=1,
+            address=response_writes[0].address,
+            values=response_writes[0].values,
+            metadata=response_writes[0].metadata,
+        )
+    )
+    dashboard_event = dashboard_commands[0]
+    assert isinstance(dashboard_event, UpsertCommunicationEventCommand)
+    assert dashboard_event.message == (
+        "MES phản hồi thiếu hoặc sai metaData.autobox_count"
+    )
 
 
 def test_start_batch_maps_4xx_to_rejected_and_does_not_start_batch():
@@ -287,6 +373,7 @@ def test_start_batch_success_log_includes_mes_identity_and_box_count():
                 "metaData": {
                     "order_id": "ORD-407038",
                     "machine_id": "M16-02",
+                    "autobox_count": 3,
                 },
             },
         )
@@ -329,6 +416,7 @@ def test_batch_id_normalizes_machine_and_order_id():
                 "metaData": {
                     "machine_id": " M16 / 02 ",
                     "order_id": "ORD 407/038",
+                    "autobox_count": 3,
                 }
             },
         )

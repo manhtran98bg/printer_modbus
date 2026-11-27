@@ -78,6 +78,10 @@ The service polls holding registers D0-D15. PLC requests and server responses ar
 | D4 | End batch | D14 |
 | D5 | Reset print flow | D15 |
 
+After a successful start batch response, the service writes
+`metaData.autobox_count` from MES to D18 before writing the success response to D10.
+Missing or invalid `autobox_count` is treated as a technical error (`D10 = 3`).
+
 For backward compatibility with PLC programs that do not populate D6 yet,
 `server.use_d6_box_count` defaults to `false`. In that mode, start batch sends
 `{"box_count": 0}`. Set it to `true` to send the value read from D6.
